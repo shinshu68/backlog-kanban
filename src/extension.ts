@@ -11,13 +11,22 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
+let currentPanel: vscode.WebviewPanel | undefined;
+
 function openKanbanPanel(): void {
-  const panel = vscode.window.createWebviewPanel(
+  if (currentPanel) {
+    currentPanel.reveal();
+    return;
+  }
+  currentPanel = vscode.window.createWebviewPanel(
     "backlogKanban",
     "Backlog Kanban",
     vscode.ViewColumn.Active,
   );
-  panel.webview.html = renderPlaceholderHtml();
+  currentPanel.onDidDispose(() => {
+    currentPanel = undefined;
+  });
+  currentPanel.webview.html = renderPlaceholderHtml();
 }
 
 function renderPlaceholderHtml(): string {
