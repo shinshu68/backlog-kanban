@@ -175,6 +175,32 @@ describe("parseBacklog", () => {
     assert.deepEqual(unparsed, []);
   });
 
+  it("列はチェックボックスの印ではなく、置かれているセクションで決める", () => {
+    const text = [
+      "## 進行中",
+      "- [x] **#001** `優先度:中` タスクA",
+      "## 未着手",
+      "- [-] **#002** `優先度:中` タスクB",
+      "## 完了",
+      "- [ ] **#003** `優先度:中` タスクC",
+    ].join("\n");
+
+    const { columns } = parseBacklog(text);
+
+    assert.deepEqual(
+      columns.inProgress.map((t) => t.id),
+      ["#001"],
+    );
+    assert.deepEqual(
+      columns.todo.map((t) => t.id),
+      ["#002"],
+    );
+    assert.deepEqual(
+      columns.done.map((t) => t.id),
+      ["#003"],
+    );
+  });
+
   it("`>` だけの行はメモに加えず、後に続くメモはそのタスクに付ける", () => {
     const text = [
       "## 進行中",
