@@ -110,6 +110,22 @@ describe("parseBacklog", () => {
     assert.deepEqual(columns.done, []);
   });
 
+  it("Object のメンバー名と同じ見出しも、知らない見出しとして扱う", () => {
+    const text = [
+      "## constructor",
+      "- [ ] **#001** `優先度:高` タスクA",
+      "## toString",
+    ].join("\n");
+
+    const { columns, unparsed } = parseBacklog(text);
+
+    assert.deepEqual(columns, { inProgress: [], todo: [], done: [] });
+    assert.deepEqual(
+      unparsed.map((u) => u.lineNumber),
+      [1, 2, 3],
+    );
+  });
+
   it("CRLF の改行でも、LF と同じように読み取る", () => {
     const lf = readFixture("backlog-full.md");
     const crlf = lf.replace(/\n/g, "\r\n");

@@ -23,11 +23,12 @@ export interface ParsedBacklog {
   unparsed: UnparsedLine[];
 }
 
-const SECTION_TO_STATUS: Readonly<Record<string, Status>> = {
-  進行中: "inProgress",
-  未着手: "todo",
-  完了: "done",
-};
+// 素のオブジェクトで引くと、`## constructor` などがプロトタイプのメンバーに当たるため Map にする
+const SECTION_TO_STATUS: ReadonlyMap<string, Status> = new Map([
+  ["進行中", "inProgress"],
+  ["未着手", "todo"],
+  ["完了", "done"],
+]);
 
 const TITLE_PATTERN = /^# /;
 const SECTION_PATTERN = /^## (.+?)\s*$/;
@@ -59,7 +60,7 @@ export function parseBacklog(text: string): ParsedBacklog {
 
     const section = SECTION_PATTERN.exec(line);
     if (section) {
-      currentStatus = SECTION_TO_STATUS[section[1]];
+      currentStatus = SECTION_TO_STATUS.get(section[1]);
       lastTask = undefined;
       if (!currentStatus) {
         markUnparsed();
