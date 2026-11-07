@@ -33,7 +33,7 @@ const SECTION_TO_STATUS: ReadonlyMap<string, Status> = new Map([
 const TITLE_PATTERN = /^# /;
 const SECTION_PATTERN = /^## (.+?)\s*$/;
 const TASK_PATTERN =
-  /^- \[[ x]\] \*\*(#\d+)\*\* `優先度:(高|中|低|未設定)` (.+?)\s*$/;
+  /^- \[[ xX]\] \*\*(#\d+)\*\* `優先度:(高|中|低|未設定)` (.+?)\s*$/;
 const NOTE_PATTERN = /^\s*>\s?(.*?)\s*$/;
 
 /**
@@ -49,11 +49,14 @@ export function parseBacklog(text: string): ParsedBacklog {
   let currentStatus: Status | undefined;
   let lastTask: Task | undefined;
 
-  for (const [index, line] of text.split(/\r?\n/).entries()) {
+  const lines = text.replace(/^﻿/, "").split(/\r?\n/);
+  for (const [index, line] of lines.entries()) {
     const parsed = classifyLine(line);
 
     if (parsed.kind === "note" && lastTask) {
-      lastTask.notes.push(parsed.text);
+      if (parsed.text !== "") {
+        lastTask.notes.push(parsed.text);
+      }
       continue;
     }
     lastTask = undefined;

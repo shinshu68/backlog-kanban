@@ -158,6 +158,39 @@ describe("parseBacklog", () => {
     assert.deepEqual(unparsed, [{ lineNumber: 5, text: "      > 離れたメモ" }]);
   });
 
+  it("大文字の `[X]` のタスクも読み取る", () => {
+    const text = ["## 完了", "- [X] **#001** `優先度:中` タスクA"].join("\n");
+
+    const { columns, unparsed } = parseBacklog(text);
+
+    assert.deepEqual(
+      columns.done.map((t) => t.id),
+      ["#001"],
+    );
+    assert.deepEqual(unparsed, []);
+  });
+
+  it("`>` だけの行はメモに加えず、後に続くメモはそのタスクに付ける", () => {
+    const text = [
+      "## 進行中",
+      "- [ ] **#001** `優先度:高` タスクA",
+      "      > 1行目",
+      "      >",
+      "      > 3行目",
+    ].join("\n");
+
+    const { columns, unparsed } = parseBacklog(text);
+
+    assert.deepEqual(columns.inProgress[0].notes, ["1行目", "3行目"]);
+    assert.deepEqual(unparsed, []);
+  });
+
+  it("先頭に BOM があっても、BOM がないときと同じように読み取る", () => {
+    const text = readFixture("backlog-full.md");
+
+    assert.deepEqual(parseBacklog("﻿" + text), parseBacklog(text));
+  });
+
   it("CRLF の改行でも、LF と同じように読み取る", () => {
     const lf = readFixture("backlog-full.md");
     const crlf = lf.replace(/\n/g, "\r\n");
