@@ -49,7 +49,7 @@ export function parseBacklog(text: string): ParsedBacklog {
   let currentStatus: Status | undefined;
   let lastTask: Task | undefined;
 
-  const lines = text.replace(/^﻿/, "").split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
     const parsed = classifyLine(line);
 

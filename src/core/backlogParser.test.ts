@@ -188,7 +188,7 @@ describe("parseBacklog", () => {
   it("先頭に BOM があっても、BOM がないときと同じように読み取る", () => {
     const text = readFixture("backlog-full.md");
 
-    assert.deepEqual(parseBacklog("﻿" + text), parseBacklog(text));
+    assert.deepEqual(parseBacklog("\uFEFF" + text), parseBacklog(text));
   });
 
   it("CRLF の改行でも、LF と同じように読み取る", () => {
