@@ -9,7 +9,8 @@ backlog スキルが管理するバックログ (`~/.claude/backlog-data/<プロ
 - TypeScript (VSCode 拡張機能)
 - Webview は素の HTML/CSS/TypeScript。UI フレームワークは使わない
 - 配布は .vsix のみ。Marketplace には公開しない
-- 詳細なビルド・テストの構成は、ひな形を作成したあとに確定する (docs/plan.md の未決事項を参照)
+- テストは Node 標準の `node:test` で書く (docs/plan.md の「テスト」を参照)
+- 詳細なビルドの構成は、ひな形を作成したあとに確定する
 
 ## ディレクトリ構成
 
