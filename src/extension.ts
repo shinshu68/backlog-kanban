@@ -9,8 +9,6 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 }
 
-export function deactivate(): void {}
-
 let currentPanel: vscode.WebviewPanel | undefined;
 
 function openKanbanPanel(): void {
