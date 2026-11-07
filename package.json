@@ -27,7 +27,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p .",
+    "clean": "node -e \"require('node:fs').rmSync('out', { recursive: true, force: true })\"",
+    "compile": "npm run clean && tsc -p .",
     "watch": "tsc -watch -p .",
     "test": "npm run compile && node --test \"out/**/*.test.js\"",
     "package": "vsce package --skip-license"
