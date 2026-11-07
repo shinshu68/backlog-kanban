@@ -20,7 +20,7 @@ backlog スキルが管理するバックログ (`~/.claude/backlog-data/<プロ
 - `src/core/`: VSCode の API に依存しない処理 (パーサー、プロジェクト名の解決、データの置き場所の解決)。`vscode` を import しない
 - `src/view/`: Webview の表示
 - テストは対象と同じフォルダに `*.test.ts` で置く。フィクスチャは `src/test/fixtures/` に置く
-  - テストは `out/` にビルドしたものを実行し、`tsc` はフィクスチャを `out/` へコピーしない。そのためテストから `__dirname` の相対パスでフィクスチャを読まず、プロジェクトのルートを起点にパスを解決するヘルパー (`src/test/` に置く) を経由して読む
+  - テストは `out/` にビルドしたものを実行し、`tsc` はフィクスチャを `out/` へコピーしない。そのためテストから `__dirname` の相対パスでフィクスチャを読まず、プロジェクトのルートを起点にパスを解決するヘルパー (`src/test/fixtures.ts` の `readFixture`) を経由して読む
 
 ## コマンド
 
@@ -43,7 +43,7 @@ backlog スキルが管理するバックログ (`~/.claude/backlog-data/<プロ
 - 拡張機能からバックログのファイルを書き換えない。作成・更新は backlog スキルだけが行う
 - バックログの書式は、次のファイルの間でそろえる。片方だけ変えると、エラーが出ずに表示が崩れる
   - backlog スキルの SKILL.md の「ファイルフォーマット」 (dotfiles 側の `~/.claude/skills/backlog/SKILL.md`)
-  - この拡張機能のパーサー (`src/core/` に置く。ファイル名は実装時に追記する)
+  - この拡張機能のパーサー (`src/core/backlogParser.ts`) と、そのテストのフィクスチャ (`src/test/fixtures/backlog-*.md`)
   - 書式を前提にしている他のスキル: pj-status の `scripts/collect.sh`、repo-create の `scripts/create_backlog.sh`
 - 次の値は、対でそろえる
   - コマンドの ID (`backlogKanban.open`): `package.json` の `contributes.commands` と `src/extension.ts` の `registerCommand`。片方だけ変えると、エラーが出ずにコマンドが動かなくなる
