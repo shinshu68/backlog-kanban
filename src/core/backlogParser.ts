@@ -52,27 +52,31 @@ export function parseBacklog(text: string): ParsedBacklog {
 
   const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
-    const parsed = classifyLine(line);
-
-    if (parsed.kind === "note" && lastTask) {
-      if (parsed.text !== "") {
-        lastTask.notes.push(parsed.text);
-      }
-      continue;
+    if (!applyLine(classifyLine(line))) {
+      result.unparsed.push({ lineNumber: index + 1, text: line });
     }
-    lastTask = undefined;
-
-    if (isAccepted(parsed)) {
-      continue;
-    }
-    result.unparsed.push({ lineNumber: index + 1, text: line });
   }
 
   return result;
 
-  /** 行を取り込めたら true、解釈できなかった行に回すなら false を返す */
-  function isAccepted(parsed: ClassifiedLine): boolean {
+  /**
+   * 1行分の内容を result と読み取りの状態に反映する。
+   * 取り込めたら true、解釈できなかった行に回すなら false を返す。
+   */
+  function applyLine(parsed: ClassifiedLine): boolean {
+    const previousTask = lastTask;
+    lastTask = undefined;
+
     switch (parsed.kind) {
+      case "note":
+        if (!previousTask) {
+          return false;
+        }
+        if (parsed.text !== "") {
+          previousTask.notes.push(parsed.text);
+        }
+        lastTask = previousTask;
+        return true;
       case "blank":
         return true;
       case "title":
@@ -88,7 +92,6 @@ export function parseBacklog(text: string): ParsedBacklog {
         lastTask = parsed.task;
         result.columns[currentStatus].push(lastTask);
         return true;
-      case "note":
       case "other":
         return false;
     }
