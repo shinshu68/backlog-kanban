@@ -126,6 +126,38 @@ describe("parseBacklog", () => {
     );
   });
 
+  it("セクションより後にある `# ` の見出しは、解釈できなかった行に残す", () => {
+    const text = [
+      "# プロジェクトバックログ",
+      "## 進行中",
+      "# 途中の見出し",
+      "- [ ] **#001** `優先度:高` タスクA",
+    ].join("\n");
+
+    const { columns, unparsed } = parseBacklog(text);
+
+    assert.deepEqual(unparsed, [{ lineNumber: 3, text: "# 途中の見出し" }]);
+    assert.deepEqual(
+      columns.inProgress.map((t) => t.id),
+      ["#001"],
+    );
+  });
+
+  it("空行をはさんだ `>` の行は、前のタスクのメモにしない", () => {
+    const text = [
+      "## 進行中",
+      "- [ ] **#001** `優先度:高` タスクA",
+      "      > タスクAのメモ",
+      "",
+      "      > 離れたメモ",
+    ].join("\n");
+
+    const { columns, unparsed } = parseBacklog(text);
+
+    assert.deepEqual(columns.inProgress[0].notes, ["タスクAのメモ"]);
+    assert.deepEqual(unparsed, [{ lineNumber: 5, text: "      > 離れたメモ" }]);
+  });
+
   it("CRLF の改行でも、LF と同じように読み取る", () => {
     const lf = readFixture("backlog-full.md");
     const crlf = lf.replace(/\n/g, "\r\n");

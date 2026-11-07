@@ -45,53 +45,86 @@ export function parseBacklog(text: string): ParsedBacklog {
     columns: { inProgress: [], todo: [], done: [] },
     unparsed: [],
   };
+  let seenSection = false;
   let currentStatus: Status | undefined;
   let lastTask: Task | undefined;
 
-  text.split(/\r?\n/).forEach((line, index) => {
-    const markUnparsed = (): void => {
-      result.unparsed.push({ lineNumber: index + 1, text: line });
-      lastTask = undefined;
-    };
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
+    const parsed = classifyLine(line);
 
-    if (line.trim() === "" || TITLE_PATTERN.test(line)) {
-      return;
+    if (parsed.kind === "note" && lastTask) {
+      lastTask.notes.push(parsed.text);
+      continue;
     }
+    lastTask = undefined;
 
-    const section = SECTION_PATTERN.exec(line);
-    if (section) {
-      currentStatus = SECTION_TO_STATUS.get(section[1]);
-      lastTask = undefined;
-      if (!currentStatus) {
-        markUnparsed();
-      }
-      return;
+    if (isAccepted(parsed)) {
+      continue;
     }
+    result.unparsed.push({ lineNumber: index + 1, text: line });
+  }
 
-    const note = NOTE_PATTERN.exec(line);
-    if (note) {
-      if (lastTask) {
-        lastTask.notes.push(note[1]);
-      } else {
-        markUnparsed();
-      }
-      return;
+  return result;
+
+  /** 行を取り込めたら true、解釈できなかった行に回すなら false を返す */
+  function isAccepted(parsed: ClassifiedLine): boolean {
+    switch (parsed.kind) {
+      case "blank":
+        return true;
+      case "title":
+        return !seenSection;
+      case "section":
+        seenSection = true;
+        currentStatus = parsed.status;
+        return currentStatus !== undefined;
+      case "task":
+        if (!currentStatus) {
+          return false;
+        }
+        lastTask = parsed.task;
+        result.columns[currentStatus].push(lastTask);
+        return true;
+      case "note":
+      case "other":
+        return false;
     }
+  }
+}
 
-    const task = TASK_PATTERN.exec(line);
-    if (task && currentStatus) {
-      lastTask = {
+type ClassifiedLine =
+  | { kind: "blank" }
+  | { kind: "title" }
+  | { kind: "section"; status: Status | undefined }
+  | { kind: "task"; task: Task }
+  | { kind: "note"; text: string }
+  | { kind: "other" };
+
+function classifyLine(line: string): ClassifiedLine {
+  if (line.trim() === "") {
+    return { kind: "blank" };
+  }
+  if (TITLE_PATTERN.test(line)) {
+    return { kind: "title" };
+  }
+  const section = SECTION_PATTERN.exec(line);
+  if (section) {
+    return { kind: "section", status: SECTION_TO_STATUS.get(section[1]) };
+  }
+  const note = NOTE_PATTERN.exec(line);
+  if (note) {
+    return { kind: "note", text: note[1] };
+  }
+  const task = TASK_PATTERN.exec(line);
+  if (task) {
+    return {
+      kind: "task",
+      task: {
         id: task[1],
         priority: task[2] as Priority,
         title: task[3],
         notes: [],
-      };
-      result.columns[currentStatus].push(lastTask);
-      return;
-    }
-
-    markUnparsed();
-  });
-
-  return result;
+      },
+    };
+  }
+  return { kind: "other" };
 }
