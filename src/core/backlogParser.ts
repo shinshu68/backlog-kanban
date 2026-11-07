@@ -32,8 +32,9 @@ const SECTION_TO_STATUS: ReadonlyMap<string, Status> = new Map([
 
 const TITLE_PATTERN = /^# /;
 const SECTION_PATTERN = /^## (.+?)\s*$/;
+// ステータスはセクションで決めるので、チェックボックスの印は pj-status と同じく問わない
 const TASK_PATTERN =
-  /^- \[[ xX]\] \*\*(#\d+)\*\* `優先度:(高|中|低|未設定)` (.+?)\s*$/;
+  /^- \[.\] \*\*(#\d+)\*\* `優先度:(高|中|低|未設定)` (.+?)\s*$/;
 const NOTE_PATTERN = /^\s*>\s?(.*?)\s*$/;
 
 /**

@@ -158,14 +158,19 @@ describe("parseBacklog", () => {
     assert.deepEqual(unparsed, [{ lineNumber: 5, text: "      > 離れたメモ" }]);
   });
 
-  it("大文字の `[X]` のタスクも読み取る", () => {
-    const text = ["## 完了", "- [X] **#001** `優先度:中` タスクA"].join("\n");
+  it("チェックボックスの印が `[X]` や `[-]` でも、セクションの列に入れる", () => {
+    const text = [
+      "## 完了",
+      "- [X] **#001** `優先度:中` タスクA",
+      "- [-] **#002** `優先度:中` タスクB",
+      "- [~] **#003** `優先度:中` タスクC",
+    ].join("\n");
 
     const { columns, unparsed } = parseBacklog(text);
 
     assert.deepEqual(
       columns.done.map((t) => t.id),
-      ["#001"],
+      ["#001", "#002", "#003"],
     );
     assert.deepEqual(unparsed, []);
   });
