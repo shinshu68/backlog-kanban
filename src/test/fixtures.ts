@@ -9,5 +9,12 @@ const FIXTURES_DIR = path.resolve(__dirname, "../../src/test/fixtures");
  * src/test/fixtures/ にあるフィクスチャのファイルを UTF-8 の文字列で読む。
  */
 export function readFixture(name: string): string {
-  return readFileSync(path.join(FIXTURES_DIR, name), "utf8");
+  return readFileSync(fixturePath(name), "utf8");
+}
+
+/**
+ * src/test/fixtures/ にあるフィクスチャのファイルやフォルダの絶対パスを返す。
+ */
+export function fixturePath(name: string): string {
+  return path.join(FIXTURES_DIR, name);
 }
