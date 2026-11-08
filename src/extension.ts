@@ -12,6 +12,8 @@ const GIT_INFO_TTL_MS = 60_000;
 const getGitInfo = createTtlCache(readGitInfo, GIT_INFO_TTL_MS);
 
 let currentPanel: vscode.WebviewPanel | undefined;
+/** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
+let latestLoadId = 0;
 
 /**
  * 拡張機能の起動時に呼ばれ、カンバンを開くコマンドを登録する。
@@ -26,12 +28,13 @@ async function openKanbanPanel(): Promise<void> {
   const panel = currentPanel ?? createPanel();
   panel.reveal();
 
+  const loadId = ++latestLoadId;
   const state = await loadKanbanState({
     folderPath: firstLocalFolderPath(),
     backlogDir: defaultBacklogDir(os.homedir()),
     getGitInfo,
   });
-  if (panel !== currentPanel) {
+  if (panel !== currentPanel || loadId !== latestLoadId) {
     return;
   }
   panel.title =
