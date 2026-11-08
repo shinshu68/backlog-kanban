@@ -61,16 +61,44 @@ describe("repoNameFromUrl", () => {
   }
 });
 
+/**
+ * 実行環境の git の設定や、一時フォルダより上のリポジトリに結果が左右されないようにする。
+ * readGitInfo が起動する git も process.env を引き継ぐので、process.env を書き換える。
+ */
+function isolateGitEnv(ceiling: string): void {
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("GIT_")) {
+      delete process.env[key];
+    }
+  }
+  process.env.GIT_CONFIG_GLOBAL = os.devNull;
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  process.env.GIT_CEILING_DIRECTORIES = ceiling;
+}
+
+function restoreEnv(saved: NodeJS.ProcessEnv): void {
+  for (const key of Object.keys(process.env)) {
+    if (!(key in saved)) {
+      delete process.env[key];
+    }
+  }
+  Object.assign(process.env, saved);
+}
+
 describe("readGitInfo", () => {
   let tmpRoot: string;
+  let savedEnv: NodeJS.ProcessEnv;
 
   before(() => {
     tmpRoot = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), "backlog-kanban-")),
     );
+    savedEnv = { ...process.env };
+    isolateGitEnv(tmpRoot);
   });
 
   after(() => {
+    restoreEnv(savedEnv);
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
