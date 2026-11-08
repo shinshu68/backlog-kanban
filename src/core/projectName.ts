@@ -23,8 +23,8 @@ export function projectNameCandidates(
   git: GitInfo,
 ): string[] {
   const candidates = [
-    git.originUrl === undefined ? undefined : repoNameFromUrl(git.originUrl),
-    git.topLevel === undefined ? undefined : baseName(git.topLevel),
+    git.originUrl && repoNameFromUrl(git.originUrl),
+    git.topLevel && baseName(git.topLevel),
     baseName(folderPath),
   ];
   return [...new Set(candidates.filter((c): c is string => !!c))];
