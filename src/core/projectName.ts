@@ -4,6 +4,9 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+/** git が応答しないときに、カンバンを開く処理を止めないための上限 */
+const GIT_TIMEOUT_MS = 5_000;
+
 export interface GitInfo {
   /** origin の URL。リポジトリでない、origin がない、git がない場合は undefined */
   originUrl?: string;
@@ -53,7 +56,9 @@ async function runGit(
   args: string[],
 ): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync("git", ["-C", folderPath, ...args]);
+    const { stdout } = await execFileAsync("git", ["-C", folderPath, ...args], {
+      timeout: GIT_TIMEOUT_MS,
+    });
     return stdout.trim() || undefined;
   } catch {
     return undefined;
