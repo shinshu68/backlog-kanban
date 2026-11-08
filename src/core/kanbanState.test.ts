@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { loadKanbanState } from "./kanbanState";
@@ -38,7 +40,7 @@ describe("loadKanbanState", () => {
     assert.equal(state.filePath, path.join(BACKLOG_DIR, "project-b.md"));
     assert.deepEqual(
       state.backlog.columns.todo.map((t) => t.title),
-      ["タスクA"],
+      ["タスクB"],
     );
   });
 
@@ -55,6 +57,32 @@ describe("loadKanbanState", () => {
       candidates: ["missing", "sub"],
     });
   });
+
+  it(
+    "ファイルは見つかったが読めないときは、ファイルのパスと理由を返す",
+    // root は権限を外しても読めてしまうため、この確かめ方ができない
+    { skip: process.getuid?.() === 0 },
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "backlog-kanban-"));
+      const filePath = path.join(dir, "unreadable.md");
+      fs.writeFileSync(filePath, "## 進行中\n");
+      fs.chmodSync(filePath, 0o000);
+      try {
+        const state = await loadKanbanState({
+          folderPath: "/home/user/work/unreadable",
+          backlogDir: dir,
+          getGitInfo: gitInfoOf({}),
+        });
+
+        assert.equal(state.kind, "readError");
+        if (state.kind !== "readError") return;
+        assert.equal(state.filePath, filePath);
+        assert.match(state.message, /EACCES/);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("git の情報はフォルダのパスで問い合わせる", async () => {
     const asked: string[] = [];
