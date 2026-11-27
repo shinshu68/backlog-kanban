@@ -2,7 +2,11 @@ import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
 import * as path from "node:path";
 
-import { defaultBacklogDir, findBacklogFile } from "./backlogLocation";
+import {
+  defaultBacklogDir,
+  findBacklogFile,
+  listBacklogProjects,
+} from "./backlogLocation";
 import { fixturePath } from "../test/fixtures";
 
 const BACKLOG_DIR = fixturePath("backlog-data");
@@ -52,6 +56,22 @@ describe("findBacklogFile", () => {
         "project-a",
       ]),
       undefined,
+    );
+  });
+});
+
+describe("listBacklogProjects", () => {
+  it("フォルダにある .md のファイルの名前を、拡張子を除いて名前順に返す", async () => {
+    assert.deepEqual(await listBacklogProjects(BACKLOG_DIR), [
+      "project-a",
+      "project-b",
+    ]);
+  });
+
+  it("フォルダ自体がなければ、エラーにならず空の一覧を返す", async () => {
+    assert.deepEqual(
+      await listBacklogProjects(path.join(BACKLOG_DIR, "no-such-dir")),
+      [],
     );
   });
 });
