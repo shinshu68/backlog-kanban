@@ -1,5 +1,10 @@
 import { SWITCH_COMMAND_ID } from "../commandIds";
-import type { Priority, Status, Task } from "../core/backlogParser";
+import type {
+  Priority,
+  Status,
+  Task,
+  UnparsedLine,
+} from "../core/backlogParser";
 import type { KanbanState } from "../core/kanbanState";
 
 const COLUMNS: readonly { status: Status; label: string }[] = [
@@ -89,9 +94,7 @@ function renderProjectLinks(projects: readonly string[]): string {
   return `<section class="projects"><h2>プロジェクトを選ぶ</h2><ul>${links}</ul></section>`;
 }
 
-function renderUnparsed(
-  unparsed: readonly { lineNumber: number; text: string }[],
-): string {
+function renderUnparsed(unparsed: readonly UnparsedLine[]): string {
   if (unparsed.length === 0) {
     return "";
   }
