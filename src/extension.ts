@@ -7,6 +7,7 @@ import { readGitInfo } from "./core/projectName";
 import { createTtlCache } from "./core/ttlCache";
 import { renderKanbanHtml } from "./view/renderKanban";
 
+const OPEN_COMMAND_ID = "backlogKanban.open";
 const GIT_INFO_TTL_MS = 60_000;
 
 const getGitInfo = createTtlCache(readGitInfo, GIT_INFO_TTL_MS);
@@ -16,12 +17,26 @@ let currentPanel: vscode.WebviewPanel | undefined;
 let latestLoadId = 0;
 
 /**
- * 拡張機能の起動時に呼ばれ、カンバンを開くコマンドを登録する。
+ * 拡張機能の起動時に呼ばれ、カンバンを開くコマンドとステータスバーの入口を登録する。
  */
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("backlogKanban.open", openKanbanPanel),
+    vscode.commands.registerCommand(OPEN_COMMAND_ID, openKanbanPanel),
+    createStatusBarEntry(),
   );
+}
+
+function createStatusBarEntry(): vscode.StatusBarItem {
+  const item = vscode.window.createStatusBarItem(
+    "backlogKanban.statusBar",
+    vscode.StatusBarAlignment.Left,
+  );
+  item.name = "Backlog Kanban";
+  item.text = "$(project) Backlog";
+  item.tooltip = "カンバンを開く";
+  item.command = OPEN_COMMAND_ID;
+  item.show();
+  return item;
 }
 
 async function openKanbanPanel(): Promise<void> {
