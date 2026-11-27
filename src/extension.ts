@@ -1,27 +1,38 @@
 import * as os from "node:os";
 import * as vscode from "vscode";
 
-import { defaultBacklogDir } from "./core/backlogLocation";
-import { loadKanbanState } from "./core/kanbanState";
+import {
+  defaultBacklogDir,
+  listBacklogProjects,
+} from "./core/backlogLocation";
+import { loadKanbanState, locateBacklog } from "./core/kanbanState";
 import { readGitInfo } from "./core/projectName";
+import { projectPickItems } from "./core/projectPicker";
 import { createTtlCache } from "./core/ttlCache";
 import { renderKanbanHtml } from "./view/renderKanban";
 
 const OPEN_COMMAND_ID = "backlogKanban.open";
+const SWITCH_COMMAND_ID = "backlogKanban.switchProject";
+const PANEL_VIEW_TYPE = "backlogKanban";
 const GIT_INFO_TTL_MS = 60_000;
 
 const getGitInfo = createTtlCache(readGitInfo, GIT_INFO_TTL_MS);
 
 let currentPanel: vscode.WebviewPanel | undefined;
+/** 一覧から選んだプロジェクト名。カンバンのタブを閉じるまで保つ */
+let selectedProject: string | undefined;
+/** カンバンに表示中のプロジェクト名。バックログを表示していなければ undefined */
+let shownProject: string | undefined;
 /** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
 let latestLoadId = 0;
 
 /**
- * 拡張機能の起動時に呼ばれ、カンバンを開くコマンドとステータスバーの入口を登録する。
+ * 拡張機能の起動時に呼ばれ、コマンドとステータスバーの入口を登録する。
  */
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_COMMAND_ID, openKanbanPanel),
+    vscode.commands.registerCommand(SWITCH_COMMAND_ID, switchProject),
     createStatusBarEntry(),
   );
 }
@@ -40,18 +51,59 @@ function createStatusBarEntry(): vscode.StatusBarItem {
 }
 
 async function openKanbanPanel(): Promise<void> {
+  await showKanban();
+}
+
+async function switchProject(): Promise<void> {
+  const backlogDir = backlogDirPath();
+  const projects = await listBacklogProjects(backlogDir);
+  if (projects.length === 0) {
+    void vscode.window.showInformationMessage(
+      `バックログが見つかりません: ${backlogDir}`,
+    );
+    return;
+  }
+
+  const folderLocation = await locateBacklog({
+    folderPath: firstLocalFolderPath(),
+    backlogDir,
+    getGitInfo,
+  });
+  const picked = await vscode.window.showQuickPick(
+    projectPickItems(projects, {
+      folderProject:
+        folderLocation.kind === "found" ? folderLocation.found.name : undefined,
+      shownProject,
+    }),
+    { placeHolder: "表示するプロジェクトを選ぶ" },
+  );
+  if (picked) {
+    await showKanban(picked.label);
+  }
+}
+
+/**
+ * カンバンのタブを開き (開いていれば前に出し)、表示するバックログを読み直して描く。
+ * project を渡すと、タブを閉じるまでそのプロジェクトを表示する。
+ */
+async function showKanban(project?: string): Promise<void> {
   const panel = currentPanel ?? createPanel();
+  if (project !== undefined) {
+    selectedProject = project;
+  }
   panel.reveal();
 
   const loadId = ++latestLoadId;
   const state = await loadKanbanState({
     folderPath: firstLocalFolderPath(),
-    backlogDir: defaultBacklogDir(os.homedir()),
+    backlogDir: backlogDirPath(),
     getGitInfo,
+    selectedProject,
   });
   if (panel !== currentPanel || loadId !== latestLoadId) {
     return;
   }
+  shownProject = state.kind === "board" ? state.projectName : undefined;
   panel.title =
     state.kind === "board" ? `Backlog: ${state.projectName}` : "Backlog Kanban";
   panel.webview.html = renderKanbanHtml(state);
@@ -59,15 +111,21 @@ async function openKanbanPanel(): Promise<void> {
 
 function createPanel(): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
-    "backlogKanban",
+    PANEL_VIEW_TYPE,
     "Backlog Kanban",
     vscode.ViewColumn.Active,
   );
   panel.onDidDispose(() => {
     currentPanel = undefined;
+    selectedProject = undefined;
+    shownProject = undefined;
   });
   currentPanel = panel;
   return panel;
+}
+
+function backlogDirPath(): string {
+  return defaultBacklogDir(os.homedir());
 }
 
 function firstLocalFolderPath(): string | undefined {

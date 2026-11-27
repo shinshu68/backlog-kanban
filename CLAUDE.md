@@ -48,6 +48,8 @@ backlog スキルが管理するバックログ (`~/.claude/backlog-data/<プロ
   - 書式を前提にしている他のスキル: pj-status の `scripts/collect.sh`、repo-create の `scripts/create_backlog.sh`
 - 次の値は、対でそろえる
   - コマンドの ID (`backlogKanban.open`): `package.json` の `contributes.commands` と `src/extension.ts` の `OPEN_COMMAND_ID` (コマンドの登録とステータスバーの入口の両方で使う)。片方だけ変えると、エラーが出ずにコマンドが動かなくなる
+  - 切り替えのコマンドの ID (`backlogKanban.switchProject`): `package.json` の `contributes.commands` と `contributes.menus.editor/title`、`src/extension.ts` の `SWITCH_COMMAND_ID`
+  - カンバンのパネルの種類 (`backlogKanban`): `src/extension.ts` の `PANEL_VIEW_TYPE` と、`package.json` の `contributes.menus.editor/title` の `when` (`activeWebviewPanelId`)。片方だけ変えると、タイトルバーの切り替えのボタンがエラーなしに出なくなる
   - VSCode の版: `package.json` の `engines.vscode` と `devDependencies` の `@types/vscode`。型の版を engines より新しくすると .vsix を作れない
 - プロジェクト名からバックログのファイルを探す順序 (origin のリポジトリ名 → git のトップディレクトリ名 → ディレクトリ名) は、この拡張機能の `src/core/projectName.ts` と、pj-status の `scripts/collect.sh` の `name_candidates` とでそろえる。origin の URL からリポジトリ名を取り出す方法 (末尾の `.git` を除き、最後の `/` と `:` より後ろを取る) も同じにする
 - テスト用のバックログのフィクスチャには、実際のバックログのタスク名を使わない。「タスクA」のような架空のタイトルにする
