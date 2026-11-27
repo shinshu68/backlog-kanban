@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import * as vscode from "vscode";
 
+import { OPEN_COMMAND_ID, SWITCH_COMMAND_ID } from "./commandIds";
 import {
   defaultBacklogDir,
   listBacklogProjects,
@@ -11,8 +12,6 @@ import { projectPickItems } from "./core/projectPicker";
 import { createTtlCache } from "./core/ttlCache";
 import { renderKanbanHtml } from "./view/renderKanban";
 
-const OPEN_COMMAND_ID = "backlogKanban.open";
-const SWITCH_COMMAND_ID = "backlogKanban.switchProject";
 const PANEL_VIEW_TYPE = "backlogKanban";
 const GIT_INFO_TTL_MS = 60_000;
 
@@ -54,7 +53,16 @@ async function openKanbanPanel(): Promise<void> {
   await showKanban();
 }
 
-async function switchProject(): Promise<void> {
+/**
+ * 表示するプロジェクトを切り替える。
+ * 一覧から選ぶ画面のリンクからはプロジェクト名が渡され、そのまま表示する。
+ * タイトルバーのボタンやコマンドパレットからは、クイックピックで選ばせる。
+ */
+async function switchProject(project?: unknown): Promise<void> {
+  if (typeof project === "string") {
+    await showKanban(project);
+    return;
+  }
   const backlogDir = backlogDirPath();
   const projects = await listBacklogProjects(backlogDir);
   if (projects.length === 0) {
@@ -100,13 +108,17 @@ async function showKanban(project?: string): Promise<void> {
     getGitInfo,
     selectedProject,
   });
+  const projects =
+    state.kind === "noWorkspace" || state.kind === "notFound"
+      ? await listBacklogProjects(backlogDirPath())
+      : [];
   if (panel !== currentPanel || loadId !== latestLoadId) {
     return;
   }
   shownProject = state.kind === "board" ? state.projectName : undefined;
   panel.title =
     state.kind === "board" ? `Backlog: ${state.projectName}` : "Backlog Kanban";
-  panel.webview.html = renderKanbanHtml(state);
+  panel.webview.html = renderKanbanHtml(state, projects);
 }
 
 function createPanel(): vscode.WebviewPanel {
@@ -114,6 +126,7 @@ function createPanel(): vscode.WebviewPanel {
     PANEL_VIEW_TYPE,
     "Backlog Kanban",
     vscode.ViewColumn.Active,
+    { enableCommandUris: [SWITCH_COMMAND_ID] },
   );
   panel.onDidDispose(() => {
     currentPanel = undefined;
