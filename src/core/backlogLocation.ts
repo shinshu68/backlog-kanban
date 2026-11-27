@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import * as path from "node:path";
 
 export interface FoundBacklog {
@@ -29,6 +29,31 @@ export async function findBacklogFile(
     }
   }
   return undefined;
+}
+
+/**
+ * フォルダにあるバックログのプロジェクト名 (`.md` のファイル名から拡張子を除いたもの) を名前順に返す。
+ * フォルダが読めなければ空の一覧を返す。
+ */
+export async function listBacklogProjects(
+  backlogDir: string,
+): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(backlogDir);
+  } catch {
+    return [];
+  }
+  const names: string[] = [];
+  for (const entry of entries) {
+    if (
+      entry.endsWith(".md") &&
+      (await isFile(path.join(backlogDir, entry)))
+    ) {
+      names.push(entry.slice(0, -".md".length));
+    }
+  }
+  return names.sort((a, b) => a.localeCompare(b));
 }
 
 async function isFile(filePath: string): Promise<boolean> {

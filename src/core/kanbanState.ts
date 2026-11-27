@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { findBacklogFile } from "./backlogLocation";
+import { findBacklogFile, type FoundBacklog } from "./backlogLocation";
 import { parseBacklog, type ParsedBacklog } from "./backlogParser";
 import { projectNameCandidates, type GitInfo } from "./projectName";
 
@@ -20,27 +20,51 @@ export interface KanbanStateSource {
   folderPath: string | undefined;
   backlogDir: string;
   getGitInfo: (folderPath: string) => Promise<GitInfo>;
+  /** 一覧から選んだプロジェクト名。選んでいなければ undefined で、開いているフォルダから探す */
+  selectedProject?: string;
+}
+
+export type BacklogLocation =
+  | { kind: "found"; found: FoundBacklog }
+  | Extract<KanbanState, { kind: "noWorkspace" | "notFound" }>;
+
+/**
+ * 表示するバックログのファイルを探す。
+ * プロジェクトを選んでいればその名前のファイルを、選んでいなければ開いているフォルダに対応するファイルを探す。
+ */
+export async function locateBacklog(
+  source: KanbanStateSource,
+): Promise<BacklogLocation> {
+  const { folderPath, backlogDir, getGitInfo, selectedProject } = source;
+  let candidates: string[];
+  if (selectedProject !== undefined) {
+    candidates = [selectedProject];
+  } else if (folderPath === undefined) {
+    return { kind: "noWorkspace" };
+  } else {
+    candidates = projectNameCandidates(
+      folderPath,
+      await getGitInfo(folderPath),
+    );
+  }
+
+  const found = await findBacklogFile(backlogDir, candidates);
+  return found
+    ? { kind: "found", found }
+    : { kind: "notFound", backlogDir, candidates };
 }
 
 /**
- * 開いているフォルダに対応するバックログを探して読み、表示する状態を決める。
+ * 表示するバックログを探して読み、表示する状態を決める。
  */
 export async function loadKanbanState(
   source: KanbanStateSource,
 ): Promise<KanbanState> {
-  const { folderPath, backlogDir, getGitInfo } = source;
-  if (folderPath === undefined) {
-    return { kind: "noWorkspace" };
+  const location = await locateBacklog(source);
+  if (location.kind !== "found") {
+    return location;
   }
-
-  const candidates = projectNameCandidates(
-    folderPath,
-    await getGitInfo(folderPath),
-  );
-  const found = await findBacklogFile(backlogDir, candidates);
-  if (!found) {
-    return { kind: "notFound", backlogDir, candidates };
-  }
+  const { found } = location;
 
   try {
     const text = await readFile(found.filePath, "utf8");

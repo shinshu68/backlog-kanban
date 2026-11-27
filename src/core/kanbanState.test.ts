@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { loadKanbanState } from "./kanbanState";
+import { loadKanbanState, locateBacklog } from "./kanbanState";
 import type { GitInfo } from "./projectName";
 import { fixturePath } from "../test/fixtures";
 
@@ -96,5 +96,77 @@ describe("loadKanbanState", () => {
     });
 
     assert.deepEqual(asked, ["/home/user/work/project-a"]);
+  });
+
+  it("プロジェクトを選んでいれば、開いているフォルダより選んだプロジェクトを読む", async () => {
+    const state = await loadKanbanState({
+      folderPath: "/home/user/work/project-a",
+      backlogDir: BACKLOG_DIR,
+      getGitInfo: gitInfoOf({}),
+      selectedProject: "project-b",
+    });
+
+    assert.equal(state.kind, "board");
+    if (state.kind !== "board") return;
+    assert.equal(state.projectName, "project-b");
+  });
+
+  it("ワークスペースを開いていなくても、選んだプロジェクトは読める", async () => {
+    const state = await loadKanbanState({
+      folderPath: undefined,
+      backlogDir: BACKLOG_DIR,
+      getGitInfo: gitInfoOf({}),
+      selectedProject: "project-a",
+    });
+
+    assert.equal(state.kind, "board");
+  });
+
+  it("選んだプロジェクトのファイルがなければ、その名前だけを探した候補として返す", async () => {
+    const state = await loadKanbanState({
+      folderPath: "/home/user/work/project-a",
+      backlogDir: BACKLOG_DIR,
+      getGitInfo: gitInfoOf({}),
+      selectedProject: "removed",
+    });
+
+    assert.deepEqual(state, {
+      kind: "notFound",
+      backlogDir: BACKLOG_DIR,
+      candidates: ["removed"],
+    });
+  });
+
+  it("プロジェクトを選んでいれば、git の情報を問い合わせない", async () => {
+    let asked = false;
+    await loadKanbanState({
+      folderPath: "/home/user/work/project-a",
+      backlogDir: BACKLOG_DIR,
+      getGitInfo: async () => {
+        asked = true;
+        return {};
+      },
+      selectedProject: "project-b",
+    });
+
+    assert.equal(asked, false);
+  });
+});
+
+describe("locateBacklog", () => {
+  it("見つかったファイルを、ファイルを読まずに返す", async () => {
+    const location = await locateBacklog({
+      folderPath: "/home/user/work/project-a",
+      backlogDir: BACKLOG_DIR,
+      getGitInfo: gitInfoOf({}),
+    });
+
+    assert.deepEqual(location, {
+      kind: "found",
+      found: {
+        name: "project-a",
+        filePath: path.join(BACKLOG_DIR, "project-a.md"),
+      },
+    });
   });
 });

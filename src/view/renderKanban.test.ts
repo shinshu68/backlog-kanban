@@ -125,6 +125,54 @@ describe("renderKanbanHtml", () => {
     );
   });
 
+  it("ワークスペースを開いていないときは、プロジェクトを切り替えるコマンドのリンクを名前ごとに並べる", () => {
+    const html = renderKanbanHtml({ kind: "noWorkspace" }, [
+      "project-a",
+      "project-b",
+    ]);
+
+    const hrefs = [...html.matchAll(/<a href="([^"]*)">([^<]*)<\/a>/g)].map(
+      (m) => [m[1], m[2]],
+    );
+    assert.deepEqual(hrefs, [
+      [
+        `command:backlogKanban.switchProject?${encodeURIComponent('["project-a"]')}`,
+        "project-a",
+      ],
+      [
+        `command:backlogKanban.switchProject?${encodeURIComponent('["project-b"]')}`,
+        "project-b",
+      ],
+    ]);
+  });
+
+  it("バックログが見つからないときも、探した場所と並べてプロジェクトのリンクを出す", () => {
+    const html = renderKanbanHtml(
+      {
+        kind: "notFound",
+        backlogDir: "/home/user/.claude/backlog-data",
+        candidates: ["repo"],
+      },
+      ["project-a"],
+    );
+
+    assert.match(html, /<code>repo\.md<\/code>/);
+    assert.match(html, /<a href="command:backlogKanban\.switchProject\?[^"]*">project-a<\/a>/);
+  });
+
+  it("プロジェクト名の HTML の特殊文字は、リンクの先と表示の両方でエスケープする", () => {
+    const html = renderKanbanHtml({ kind: "noWorkspace" }, [`a'<b>`]);
+
+    assert.match(html, /<a href="[^"<>]*&#39;[^"<>]*">a&#39;&lt;b&gt;<\/a>/);
+  });
+
+  it("選べるプロジェクトがなければ、リンクの代わりにその旨を出す", () => {
+    const html = renderKanbanHtml({ kind: "noWorkspace" }, []);
+
+    assert.match(html, /選べるバックログがありません/);
+    assert.doesNotMatch(html, /<a href=/);
+  });
+
   it("スクリプトを許さない Content-Security-Policy を付ける", () => {
     const html = renderKanbanHtml({ kind: "noWorkspace" });
 

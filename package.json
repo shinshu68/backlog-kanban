@@ -25,8 +25,23 @@
         "command": "backlogKanban.open",
         "title": "カンバンを開く",
         "category": "Backlog Kanban"
+      },
+      {
+        "command": "backlogKanban.switchProject",
+        "title": "プロジェクトを切り替える",
+        "category": "Backlog Kanban",
+        "icon": "$(list-selection)"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "backlogKanban.switchProject",
+          "when": "activeWebviewPanelId == 'backlogKanban'",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

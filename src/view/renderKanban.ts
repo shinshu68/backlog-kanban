@@ -1,4 +1,10 @@
-import type { Priority, Status, Task } from "../core/backlogParser";
+import { SWITCH_COMMAND_ID } from "../commandIds";
+import type {
+  Priority,
+  Status,
+  Task,
+  UnparsedLine,
+} from "../core/backlogParser";
 import type { KanbanState } from "../core/kanbanState";
 
 const COLUMNS: readonly { status: Status; label: string }[] = [
@@ -16,8 +22,12 @@ const PRIORITY_CLASS: Readonly<Record<Priority, string | undefined>> = {
 
 /**
  * 表示する状態から、Webview に渡す HTML の文書全体を作る。
+ * projects は、ワークスペースを開いていないときやバックログが見つからないときに、選べるように並べるプロジェクト名。
  */
-export function renderKanbanHtml(state: KanbanState): string {
+export function renderKanbanHtml(
+  state: KanbanState,
+  projects: readonly string[] = [],
+): string {
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -26,12 +36,15 @@ export function renderKanbanHtml(state: KanbanState): string {
   <style>${STYLE}</style>
 </head>
 <body>
-${renderBody(state)}
+${renderBody(state, projects)}
 </body>
 </html>`;
 }
 
-function renderBody(state: KanbanState): string {
+function renderBody(
+  state: KanbanState,
+  projects: readonly string[],
+): string {
   switch (state.kind) {
     case "board":
       return [
@@ -45,7 +58,10 @@ function renderBody(state: KanbanState): string {
         `</main>`,
       ].join("\n");
     case "noWorkspace":
-      return `<p class="message">ワークスペースを開いていません。プロジェクトのフォルダを開いてから、もう一度カンバンを開いてください。</p>`;
+      return [
+        `<p class="message">ワークスペースを開いていません。表示するプロジェクトを一覧から選んでください。</p>`,
+        renderProjectLinks(projects),
+      ].join("\n");
     case "notFound":
       return [
         `<p class="message">このプロジェクトのバックログが見つかりません。</p>`,
@@ -54,6 +70,7 @@ function renderBody(state: KanbanState): string {
         `<ul>${state.candidates
           .map((c) => `<li><code>${escapeHtml(c)}.md</code></li>`)
           .join("")}</ul>`,
+        renderProjectLinks(projects),
       ].join("\n");
     case "readError":
       return [
@@ -64,9 +81,20 @@ function renderBody(state: KanbanState): string {
   }
 }
 
-function renderUnparsed(
-  unparsed: readonly { lineNumber: number; text: string }[],
-): string {
+function renderProjectLinks(projects: readonly string[]): string {
+  if (projects.length === 0) {
+    return `<section class="projects"><h2>プロジェクトを選ぶ</h2><p>選べるバックログがありません。</p></section>`;
+  }
+  const links = projects
+    .map((name) => {
+      const href = `command:${SWITCH_COMMAND_ID}?${encodeURIComponent(JSON.stringify([name]))}`;
+      return `<li><a href="${escapeHtml(href)}">${escapeHtml(name)}</a></li>`;
+    })
+    .join("");
+  return `<section class="projects"><h2>プロジェクトを選ぶ</h2><ul>${links}</ul></section>`;
+}
+
+function renderUnparsed(unparsed: readonly UnparsedLine[]): string {
   if (unparsed.length === 0) {
     return "";
   }
@@ -180,5 +208,8 @@ summary.heading > span { margin-right: 6px; }
 .unparsed ul { padding-left: 18px; }
 .line-number { color: var(--vscode-descriptionForeground); }
 .message { font-size: 1.1em; margin-top: 16px; }
+.projects h2 { font-size: 1.1em; margin: 16px 0 4px; }
+.projects a { color: var(--vscode-textLink-foreground); }
+.projects a:hover { color: var(--vscode-textLink-activeForeground); }
 code, pre { font-family: var(--vscode-editor-font-family); }
 `;
