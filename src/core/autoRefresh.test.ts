@@ -2,33 +2,73 @@ import { describe, it, mock } from "node:test";
 import * as assert from "node:assert/strict";
 import * as path from "node:path";
 
-import { createDebouncer, shouldReloadOnChange } from "./autoRefresh";
+import {
+  createDebouncer,
+  reloadTriggerPaths,
+  shouldReloadOnChange,
+} from "./autoRefresh";
+import { parseBacklog } from "./backlogParser";
+import type { KanbanState } from "./kanbanState";
 
 const DIR = path.join(path.sep, "home", "user", ".claude", "backlog-data");
 
+describe("reloadTriggerPaths", () => {
+  function boardOf(
+    projectName: string,
+    candidates: string[],
+  ): Extract<KanbanState, { kind: "board" }> {
+    return {
+      kind: "board",
+      projectName,
+      filePath: path.join(DIR, `${projectName}.md`),
+      candidates,
+      backlog: parseBacklog(""),
+    };
+  }
+
+  it("カンバンの表示中は、表示中のファイルとそれより優先順位の高い候補のファイルを返す", () => {
+    const state = boardOf("folder-x", ["origin-x", "top-x", "folder-x"]);
+
+    assert.deepEqual(reloadTriggerPaths(state), [
+      path.join(DIR, "origin-x.md"),
+      path.join(DIR, "top-x.md"),
+      path.join(DIR, "folder-x.md"),
+    ]);
+  });
+
+  it("優先順位の低い候補のファイルは返さない", () => {
+    const state = boardOf("origin-x", ["origin-x", "folder-x"]);
+
+    assert.deepEqual(reloadTriggerPaths(state), [path.join(DIR, "origin-x.md")]);
+  });
+
+  it("選んだプロジェクトの表示中は、表示中のファイルだけを返す", () => {
+    const state = boardOf("project-a", ["project-a"]);
+
+    assert.deepEqual(reloadTriggerPaths(state), [path.join(DIR, "project-a.md")]);
+  });
+});
+
 describe("shouldReloadOnChange", () => {
-  it("カンバンの表示中は、表示中のファイルが変わったら読み直す", () => {
-    const shown = path.join(DIR, "project-a.md");
+  const triggers = [path.join(DIR, "origin-x.md"), path.join(DIR, "folder-x.md")];
 
-    assert.equal(shouldReloadOnChange(path.join(DIR, "project-a.md"), shown), true);
+  it("きっかけのファイルのどれかが変わったら読み直す", () => {
+    assert.equal(shouldReloadOnChange(path.join(DIR, "origin-x.md"), triggers), true);
+    assert.equal(shouldReloadOnChange(path.join(DIR, "folder-x.md"), triggers), true);
   });
 
-  it("カンバンの表示中は、別のプロジェクトのファイルが変わっても読み直さない", () => {
-    const shown = path.join(DIR, "project-a.md");
-
-    assert.equal(shouldReloadOnChange(path.join(DIR, "project-b.md"), shown), false);
+  it("きっかけでないファイルが変わっても読み直さない", () => {
+    assert.equal(shouldReloadOnChange(path.join(DIR, "project-b.md"), triggers), false);
   });
 
-  it("書き方が違っても同じパスなら、表示中のファイルとして扱う", () => {
-    const shown = path.join(DIR, "project-a.md");
-
+  it("書き方が違っても同じパスなら、きっかけのファイルとして扱う", () => {
     assert.equal(
-      shouldReloadOnChange(`${DIR}${path.sep}.${path.sep}project-a.md`, shown),
+      shouldReloadOnChange(`${DIR}${path.sep}.${path.sep}folder-x.md`, triggers),
       true,
     );
   });
 
-  it("カンバン以外の画面では、どのファイルが変わっても読み直す", () => {
+  it("きっかけが undefined なら、どのファイルが変わっても読み直す", () => {
     assert.equal(
       shouldReloadOnChange(path.join(DIR, "project-b.md"), undefined),
       true,

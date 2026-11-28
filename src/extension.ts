@@ -9,6 +9,7 @@ import {
 } from "./core/backlogLocation";
 import {
   createDebouncer,
+  reloadTriggerPaths,
   shouldReloadOnChange,
 } from "./core/autoRefresh";
 import { loadKanbanState, locateBacklog } from "./core/kanbanState";
@@ -35,15 +36,10 @@ let selectedProject: string | undefined;
 /** カンバンに表示中のプロジェクト名。バックログを表示していなければ undefined */
 let shownProject: string | undefined;
 /**
- * カンバンに表示中のファイルのパス。バックログを表示していないときと、読み込み中は undefined で、
+ * 変わったら読み直すファイルのパス。バックログを表示していないときと、読み込み中は undefined で、
  * どのファイルの変更でも読み直す
  */
-let shownFilePath: string | undefined;
-/**
- * 自動更新で読み直すプロジェクト名。undefined なら開いているフォルダから探す。
- * 表示中のファイルが消えても、別の候補のプロジェクトへ移らずに同じプロジェクトを待つために使う
- */
-let followProject: string | undefined;
+let triggerPaths: string[] | undefined;
 /** 最後に Webview へ送った中身。Webview が作り直されたときに送り直す */
 let latestMessage: RenderMessage | undefined;
 /** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
@@ -137,19 +133,15 @@ async function showKanban(project?: string): Promise<void> {
   if (showLoading) {
     postScreen(panel, { kind: "loading" });
   }
-  followProject = selectedProject;
-  shownFilePath = undefined;
-  await reloadKanban(panel, selectedProject);
+  triggerPaths = undefined;
+  await reloadKanban(panel);
 }
 
 /**
  * タブを前に出さずに、バックログを読み直して描く。
- * project を渡すとそのプロジェクトを、undefined なら開いているフォルダに対応するプロジェクトを読む。
+ * プロジェクトを選んでいればそのプロジェクトを、選んでいなければ開いているフォルダに対応するプロジェクトを読む。
  */
-async function reloadKanban(
-  panel: vscode.WebviewPanel,
-  project: string | undefined,
-): Promise<void> {
+async function reloadKanban(panel: vscode.WebviewPanel): Promise<void> {
   const loadId = ++latestLoadId;
   let screen: ScreenState;
   let projects: string[] = [];
@@ -158,7 +150,7 @@ async function reloadKanban(
       folderPath: firstLocalFolderPath(),
       backlogDir: backlogDirPath(),
       getGitInfo,
-      selectedProject: project,
+      selectedProject,
     });
     if (state.kind === "noWorkspace" || state.kind === "notFound") {
       projects = await listBacklogProjects(backlogDirPath());
@@ -174,8 +166,8 @@ async function reloadKanban(
     return;
   }
   shownProject = screen.kind === "board" ? screen.projectName : undefined;
-  shownFilePath = screen.kind === "board" ? screen.filePath : undefined;
-  followProject = screen.kind === "board" ? screen.projectName : project;
+  triggerPaths =
+    screen.kind === "board" ? reloadTriggerPaths(screen) : undefined;
   panel.title =
     screen.kind === "board"
       ? `Backlog: ${screen.projectName}`
@@ -216,22 +208,27 @@ function createPanel(): vscode.WebviewPanel {
     }
   });
   const reload = createDebouncer(
-    () => void reloadKanban(panel, followProject),
+    () => void reloadKanban(panel),
     RELOAD_DELAY_MS,
   );
   const watcher = watchBacklogDir((changedPath) => {
-    if (shouldReloadOnChange(changedPath, shownFilePath)) {
+    if (shouldReloadOnChange(changedPath, triggerPaths)) {
+      reload.schedule();
+    }
+  });
+  const folderListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    if (selectedProject === undefined) {
       reload.schedule();
     }
   });
   panel.onDidDispose(() => {
     reload.cancel();
     watcher.dispose();
+    folderListener.dispose();
     currentPanel = undefined;
     selectedProject = undefined;
     shownProject = undefined;
-    shownFilePath = undefined;
-    followProject = undefined;
+    triggerPaths = undefined;
     latestMessage = undefined;
   });
   currentPanel = panel;
