@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { OPEN_COMMAND_ID, SWITCH_COMMAND_ID } from "./commandIds";
 import {
   defaultBacklogDir,
+  isBacklogProject,
   listBacklogProjects,
 } from "./core/backlogLocation";
 import {
@@ -44,6 +45,11 @@ let triggerPaths: string[] | undefined;
 let latestMessage: RenderMessage | undefined;
 /** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
 let latestLoadId = 0;
+/**
+ * 最後に受けた表示の要求 (開く・切り替える) の番号。
+ * 名前を確かめている間に次の要求が来たとき、古い要求で表示を上書きしないために使う
+ */
+let latestShowRequestId = 0;
 
 /**
  * 拡張機能の起動時に呼ばれ、コマンドとステータスバーの入口を登録する。
@@ -70,21 +76,25 @@ function createStatusBarEntry(): vscode.StatusBarItem {
 }
 
 async function openKanbanPanel(): Promise<void> {
+  latestShowRequestId++;
   await showKanban();
 }
 
 /**
  * 表示するプロジェクトを切り替える。
- * 一覧から選ぶ画面のリンクからはプロジェクト名が渡され、そのまま表示する。
+ * 一覧から選ぶ画面のリンクからはプロジェクト名が渡され、backlog-data にあるプロジェクトなら表示する。
+ * 確かめている間に別の表示の要求が来たときは、何もしない。
  * タイトルバーのボタンやコマンドパレットからは、クイックピックで選ばせる。
  */
 async function switchProject(project?: unknown): Promise<void> {
+  const requestId = ++latestShowRequestId;
   const backlogDir = backlogDirPath();
-  const projects = await listBacklogProjects(backlogDir);
   if (typeof project === "string") {
-    // 名前はそのままファイルのパスになるため、"../x" のような一覧にない名前で
-    // backlog-data の外を読まないよう、一覧にある名前だけを受け付ける
-    if (projects.includes(project)) {
+    const isListed = await isBacklogProject(backlogDir, project);
+    if (requestId !== latestShowRequestId) {
+      return;
+    }
+    if (isListed) {
       await showKanban(project);
     } else {
       void vscode.window.showWarningMessage(
@@ -93,6 +103,7 @@ async function switchProject(project?: unknown): Promise<void> {
     }
     return;
   }
+  const projects = await listBacklogProjects(backlogDir);
   if (projects.length === 0) {
     void vscode.window.showInformationMessage(
       `バックログが見つかりません: ${backlogDir}`,

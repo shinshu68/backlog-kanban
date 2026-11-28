@@ -5,6 +5,7 @@ import * as path from "node:path";
 import {
   defaultBacklogDir,
   findBacklogFile,
+  isBacklogProject,
   listBacklogProjects,
   readBacklogFile,
 } from "./backlogLocation";
@@ -111,5 +112,25 @@ describe("listBacklogProjects", () => {
       await listBacklogProjects(path.join(BACKLOG_DIR, "no-such-dir")),
       [],
     );
+  });
+});
+
+describe("isBacklogProject", () => {
+  it("フォルダにあるバックログのプロジェクト名なら true を返す", async () => {
+    assert.equal(await isBacklogProject(BACKLOG_DIR, "project-a"), true);
+  });
+
+  it("フォルダにないプロジェクト名なら false を返す", async () => {
+    assert.equal(await isBacklogProject(BACKLOG_DIR, "missing"), false);
+  });
+
+  it("フォルダの外を指す名前は、指す先にファイルがあっても false を返す", async () => {
+    const outside = `..${path.sep}${path.basename(BACKLOG_DIR)}${path.sep}project-a`;
+
+    assert.equal(await isBacklogProject(BACKLOG_DIR, outside), false);
+  });
+
+  it(".md のファイルでもフォルダなら false を返す", async () => {
+    assert.equal(await isBacklogProject(BACKLOG_DIR, "folder-not-file"), false);
   });
 });
