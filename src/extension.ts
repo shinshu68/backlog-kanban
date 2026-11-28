@@ -142,6 +142,7 @@ async function showKanban(project?: string): Promise<void> {
   }
   panel.reveal();
   if (showLoading) {
+    shownProject = undefined;
     postScreen(panel, { kind: "loading" });
   }
   triggerPaths = undefined;
