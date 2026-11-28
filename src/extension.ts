@@ -7,6 +7,10 @@ import {
   defaultBacklogDir,
   listBacklogProjects,
 } from "./core/backlogLocation";
+import {
+  createDebouncer,
+  shouldReloadOnChange,
+} from "./core/autoRefresh";
 import { loadKanbanState, locateBacklog } from "./core/kanbanState";
 import { readGitInfo } from "./core/projectName";
 import { projectPickItems } from "./core/projectPicker";
@@ -21,6 +25,7 @@ import {
 
 const PANEL_VIEW_TYPE = "backlogKanban";
 const GIT_INFO_TTL_MS = 60_000;
+const RELOAD_DELAY_MS = 200;
 
 const getGitInfo = createTtlCache(readGitInfo, GIT_INFO_TTL_MS);
 
@@ -29,6 +34,8 @@ let currentPanel: vscode.WebviewPanel | undefined;
 let selectedProject: string | undefined;
 /** カンバンに表示中のプロジェクト名。バックログを表示していなければ undefined */
 let shownProject: string | undefined;
+/** カンバンに表示中のファイルのパス。バックログを表示していなければ undefined */
+let shownFilePath: string | undefined;
 /** 最後に Webview へ送った中身。Webview が作り直されたときに送り直す */
 let latestMessage: RenderMessage | undefined;
 /** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
@@ -139,6 +146,7 @@ async function showKanban(project?: string): Promise<void> {
     return;
   }
   shownProject = screen.kind === "board" ? screen.projectName : undefined;
+  shownFilePath = screen.kind === "board" ? screen.filePath : undefined;
   panel.title =
     screen.kind === "board"
       ? `Backlog: ${screen.projectName}`
@@ -178,14 +186,41 @@ function createPanel(): vscode.WebviewPanel {
       void panel.webview.postMessage(latestMessage);
     }
   });
+  const reload = createDebouncer(() => void showKanban(), RELOAD_DELAY_MS);
+  const watcher = watchBacklogDir((changedPath) => {
+    if (shouldReloadOnChange(changedPath, shownFilePath)) {
+      reload.schedule();
+    }
+  });
   panel.onDidDispose(() => {
+    reload.cancel();
+    watcher.dispose();
     currentPanel = undefined;
     selectedProject = undefined;
     shownProject = undefined;
+    shownFilePath = undefined;
     latestMessage = undefined;
   });
   currentPanel = panel;
   return panel;
+}
+
+/**
+ * バックログのフォルダ直下の .md のファイルの変更・作成・削除を監視し、変わったファイルのパスを渡す。
+ */
+function watchBacklogDir(
+  onChange: (changedPath: string) => void,
+): vscode.Disposable {
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(vscode.Uri.file(backlogDirPath()), "*.md"),
+  );
+  const listener = (uri: vscode.Uri) => onChange(uri.fsPath);
+  return vscode.Disposable.from(
+    watcher,
+    watcher.onDidChange(listener),
+    watcher.onDidCreate(listener),
+    watcher.onDidDelete(listener),
+  );
 }
 
 function backlogDirPath(): string {
