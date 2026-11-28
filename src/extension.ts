@@ -118,11 +118,17 @@ async function showKanban(project?: string): Promise<void> {
     selectedProject = project;
   }
   panel.reveal();
-
-  const loadId = ++latestLoadId;
   if (showLoading) {
     postScreen(panel, { kind: "loading" });
   }
+  await reloadKanban(panel);
+}
+
+/**
+ * タブを前に出さずに、表示するバックログを読み直して描く。自動更新で使う。
+ */
+async function reloadKanban(panel: vscode.WebviewPanel): Promise<void> {
+  const loadId = ++latestLoadId;
   let screen: ScreenState;
   let projects: string[] = [];
   try {
@@ -186,7 +192,10 @@ function createPanel(): vscode.WebviewPanel {
       void panel.webview.postMessage(latestMessage);
     }
   });
-  const reload = createDebouncer(() => void showKanban(), RELOAD_DELAY_MS);
+  const reload = createDebouncer(
+    () => void reloadKanban(panel),
+    RELOAD_DELAY_MS,
+  );
   const watcher = watchBacklogDir((changedPath) => {
     if (shouldReloadOnChange(changedPath, shownFilePath)) {
       reload.schedule();
