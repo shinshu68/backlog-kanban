@@ -28,8 +28,16 @@ export function shouldReloadOnChange(
   if (triggerPaths === undefined) {
     return true;
   }
-  const changed = path.resolve(changedPath);
-  return triggerPaths.some((triggerPath) => path.resolve(triggerPath) === changed);
+  const changed = comparablePath(changedPath);
+  return triggerPaths.some(
+    (triggerPath) => comparablePath(triggerPath) === changed,
+  );
+}
+
+// Windows では、監視から届くパスはドライブ文字が小文字 (c:\...)、設定の値などから作るパスは大文字 (C:\...) のことがあるため、
+// ドライブ文字だけ大文字にそろえる。ほかの部分は、大文字・小文字を区別する WSL 側のパスもあるためそろえない
+function comparablePath(p: string): string {
+  return path.resolve(p.replace(/^[a-z](?=:)/, (drive) => drive.toUpperCase()));
 }
 
 export interface Debouncer {
