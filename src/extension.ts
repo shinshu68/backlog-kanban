@@ -83,12 +83,20 @@ async function openKanbanPanel(): Promise<void> {
  * タイトルバーのボタンやコマンドパレットからは、クイックピックで選ばせる。
  */
 async function switchProject(project?: unknown): Promise<void> {
-  if (typeof project === "string") {
-    await showKanban(project);
-    return;
-  }
   const backlogDir = backlogDirPath();
   const projects = await listBacklogProjects(backlogDir);
+  if (typeof project === "string") {
+    // 名前はそのままファイルのパスになるため、"../x" のような一覧にない名前で
+    // backlog-data の外を読まないよう、一覧にある名前だけを受け付ける
+    if (projects.includes(project)) {
+      await showKanban(project);
+    } else {
+      void vscode.window.showWarningMessage(
+        `バックログが見つかりません: ${project}`,
+      );
+    }
+    return;
+  }
   if (projects.length === 0) {
     void vscode.window.showInformationMessage(
       `バックログが見つかりません: ${backlogDir}`,
