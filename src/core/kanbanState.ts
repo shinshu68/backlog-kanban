@@ -1,6 +1,8 @@
-import { readFile } from "node:fs/promises";
-
-import { findBacklogFile, type FoundBacklog } from "./backlogLocation";
+import {
+  findBacklogFile,
+  readBacklogFile,
+  type FoundBacklog,
+} from "./backlogLocation";
 import { parseBacklog, type ParsedBacklog } from "./backlogParser";
 import { projectNameCandidates, type GitInfo } from "./projectName";
 
@@ -35,23 +37,14 @@ export type BacklogLocation =
 export async function locateBacklog(
   source: KanbanStateSource,
 ): Promise<BacklogLocation> {
-  const { folderPath, backlogDir, getGitInfo, selectedProject } = source;
-  let candidates: string[];
-  if (selectedProject !== undefined) {
-    candidates = [selectedProject];
-  } else if (folderPath === undefined) {
+  const candidates = await backlogCandidates(source);
+  if (candidates === undefined) {
     return { kind: "noWorkspace" };
-  } else {
-    candidates = projectNameCandidates(
-      folderPath,
-      await getGitInfo(folderPath),
-    );
   }
-
-  const found = await findBacklogFile(backlogDir, candidates);
+  const found = await findBacklogFile(source.backlogDir, candidates);
   return found
     ? { kind: "found", found }
-    : { kind: "notFound", backlogDir, candidates };
+    : { kind: "notFound", backlogDir: source.backlogDir, candidates };
 }
 
 /**
@@ -60,25 +53,42 @@ export async function locateBacklog(
 export async function loadKanbanState(
   source: KanbanStateSource,
 ): Promise<KanbanState> {
-  const location = await locateBacklog(source);
-  if (location.kind !== "found") {
-    return location;
+  const candidates = await backlogCandidates(source);
+  if (candidates === undefined) {
+    return { kind: "noWorkspace" };
   }
-  const { found } = location;
-
-  try {
-    const text = await readFile(found.filePath, "utf8");
-    return {
-      kind: "board",
-      projectName: found.name,
-      filePath: found.filePath,
-      backlog: parseBacklog(text),
-    };
-  } catch (error) {
+  const read = await readBacklogFile(source.backlogDir, candidates);
+  if (read === undefined) {
+    return { kind: "notFound", backlogDir: source.backlogDir, candidates };
+  }
+  if (read.kind === "error") {
     return {
       kind: "readError",
-      filePath: found.filePath,
-      message: error instanceof Error ? error.message : String(error),
+      filePath: read.filePath,
+      message:
+        read.error instanceof Error ? read.error.message : String(read.error),
     };
   }
+  return {
+    kind: "board",
+    projectName: read.name,
+    filePath: read.filePath,
+    backlog: parseBacklog(read.text),
+  };
+}
+
+/**
+ * 探すファイル名の候補を返す。ワークスペースを開いておらず、プロジェクトも選んでいなければ undefined を返す。
+ */
+async function backlogCandidates(
+  source: KanbanStateSource,
+): Promise<string[] | undefined> {
+  const { folderPath, getGitInfo, selectedProject } = source;
+  if (selectedProject !== undefined) {
+    return [selectedProject];
+  }
+  if (folderPath === undefined) {
+    return undefined;
+  }
+  return projectNameCandidates(folderPath, await getGitInfo(folderPath));
 }

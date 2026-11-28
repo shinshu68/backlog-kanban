@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as os from "node:os";
 import * as vscode from "vscode";
 
@@ -6,14 +7,25 @@ import {
   defaultBacklogDir,
   listBacklogProjects,
 } from "./core/backlogLocation";
+import {
+  createDebouncer,
+  shouldReloadOnChange,
+} from "./core/autoRefresh";
 import { loadKanbanState, locateBacklog } from "./core/kanbanState";
 import { readGitInfo } from "./core/projectName";
 import { projectPickItems } from "./core/projectPicker";
 import { createTtlCache } from "./core/ttlCache";
-import { renderKanbanHtml } from "./view/renderKanban";
+import {
+  READY_MESSAGE_TYPE,
+  renderKanbanPage,
+  renderMessage,
+  type RenderMessage,
+  type ScreenState,
+} from "./view/renderKanban";
 
 const PANEL_VIEW_TYPE = "backlogKanban";
 const GIT_INFO_TTL_MS = 60_000;
+const RELOAD_DELAY_MS = 200;
 
 const getGitInfo = createTtlCache(readGitInfo, GIT_INFO_TTL_MS);
 
@@ -22,6 +34,10 @@ let currentPanel: vscode.WebviewPanel | undefined;
 let selectedProject: string | undefined;
 /** カンバンに表示中のプロジェクト名。バックログを表示していなければ undefined */
 let shownProject: string | undefined;
+/** カンバンに表示中のファイルのパス。バックログを表示していなければ undefined */
+let shownFilePath: string | undefined;
+/** 最後に Webview へ送った中身。Webview が作り直されたときに送り直す */
+let latestMessage: RenderMessage | undefined;
 /** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
 let latestLoadId = 0;
 
@@ -93,32 +109,64 @@ async function switchProject(project?: unknown): Promise<void> {
 /**
  * カンバンのタブを開き (開いていれば前に出し)、表示するバックログを読み直して描く。
  * project を渡すと、タブを閉じるまでそのプロジェクトを表示する。
+ * 新しく開いたときと project を渡したときは、読み終わるまで「読み込み中」を出す。
  */
 async function showKanban(project?: string): Promise<void> {
+  const showLoading = currentPanel === undefined || project !== undefined;
   const panel = currentPanel ?? createPanel();
   if (project !== undefined) {
     selectedProject = project;
   }
   panel.reveal();
+  if (showLoading) {
+    postScreen(panel, { kind: "loading" });
+  }
+  await reloadKanban(panel);
+}
 
+/**
+ * タブを前に出さずに、表示するバックログを読み直して描く。自動更新で使う。
+ */
+async function reloadKanban(panel: vscode.WebviewPanel): Promise<void> {
   const loadId = ++latestLoadId;
-  const state = await loadKanbanState({
-    folderPath: firstLocalFolderPath(),
-    backlogDir: backlogDirPath(),
-    getGitInfo,
-    selectedProject,
-  });
-  const projects =
-    state.kind === "noWorkspace" || state.kind === "notFound"
-      ? await listBacklogProjects(backlogDirPath())
-      : [];
+  let screen: ScreenState;
+  let projects: string[] = [];
+  try {
+    const state = await loadKanbanState({
+      folderPath: firstLocalFolderPath(),
+      backlogDir: backlogDirPath(),
+      getGitInfo,
+      selectedProject,
+    });
+    if (state.kind === "noWorkspace" || state.kind === "notFound") {
+      projects = await listBacklogProjects(backlogDirPath());
+    }
+    screen = state;
+  } catch (error) {
+    screen = {
+      kind: "loadFailed",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
   if (panel !== currentPanel || loadId !== latestLoadId) {
     return;
   }
-  shownProject = state.kind === "board" ? state.projectName : undefined;
+  shownProject = screen.kind === "board" ? screen.projectName : undefined;
+  shownFilePath = screen.kind === "board" ? screen.filePath : undefined;
   panel.title =
-    state.kind === "board" ? `Backlog: ${state.projectName}` : "Backlog Kanban";
-  panel.webview.html = renderKanbanHtml(state, projects);
+    screen.kind === "board"
+      ? `Backlog: ${screen.projectName}`
+      : "Backlog Kanban";
+  postScreen(panel, screen, projects);
+}
+
+function postScreen(
+  panel: vscode.WebviewPanel,
+  screen: ScreenState,
+  projects: readonly string[] = [],
+): void {
+  latestMessage = renderMessage(screen, projects);
+  void panel.webview.postMessage(latestMessage);
 }
 
 function createPanel(): vscode.WebviewPanel {
@@ -126,15 +174,62 @@ function createPanel(): vscode.WebviewPanel {
     PANEL_VIEW_TYPE,
     "Backlog Kanban",
     vscode.ViewColumn.Active,
-    { enableCommandUris: [SWITCH_COMMAND_ID] },
+    {
+      enableScripts: true,
+      enableCommandUris: [SWITCH_COMMAND_ID],
+      localResourceRoots: [],
+    },
   );
+  panel.webview.html = renderKanbanPage(randomBytes(16).toString("base64"));
+  // 隠れていたタブが再び表示されると Webview は作り直されて中身が空になるため、
+  // スクリプトが動き始めた知らせを受けて最新の中身を送り直す
+  panel.webview.onDidReceiveMessage((message: unknown) => {
+    if (
+      (message as { type?: unknown } | undefined)?.type ===
+        READY_MESSAGE_TYPE &&
+      latestMessage
+    ) {
+      void panel.webview.postMessage(latestMessage);
+    }
+  });
+  const reload = createDebouncer(
+    () => void reloadKanban(panel),
+    RELOAD_DELAY_MS,
+  );
+  const watcher = watchBacklogDir((changedPath) => {
+    if (shouldReloadOnChange(changedPath, shownFilePath)) {
+      reload.schedule();
+    }
+  });
   panel.onDidDispose(() => {
+    reload.cancel();
+    watcher.dispose();
     currentPanel = undefined;
     selectedProject = undefined;
     shownProject = undefined;
+    shownFilePath = undefined;
+    latestMessage = undefined;
   });
   currentPanel = panel;
   return panel;
+}
+
+/**
+ * バックログのフォルダ直下の .md のファイルの変更・作成・削除を監視し、変わったファイルのパスを渡す。
+ */
+function watchBacklogDir(
+  onChange: (changedPath: string) => void,
+): vscode.Disposable {
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(vscode.Uri.file(backlogDirPath()), "*.md"),
+  );
+  const listener = (uri: vscode.Uri) => onChange(uri.fsPath);
+  return vscode.Disposable.from(
+    watcher,
+    watcher.onDidChange(listener),
+    watcher.onDidCreate(listener),
+    watcher.onDidDelete(listener),
+  );
 }
 
 function backlogDirPath(): string {
