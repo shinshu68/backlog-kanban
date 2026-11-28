@@ -16,6 +16,7 @@ function boardOf(text: string): KanbanState {
     kind: "board",
     projectName: "project-a",
     filePath: "/home/user/.claude/backlog-data/project-a.md",
+    candidates: ["project-a"],
     backlog: parseBacklog(text),
   };
 }

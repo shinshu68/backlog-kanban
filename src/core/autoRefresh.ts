@@ -1,18 +1,35 @@
 import * as path from "node:path";
 
+import type { KanbanState } from "./kanbanState";
+
+/**
+ * 表示中のカンバンを変えうるファイルのパスを返す。
+ * 表示中のファイルと、それより優先順位の高い候補のファイルを返す。
+ * 優先順位の低い候補のファイルは、表示中のファイルがある限り表示に使われないため含めない。
+ */
+export function reloadTriggerPaths(
+  state: Extract<KanbanState, { kind: "board" }>,
+): string[] {
+  const backlogDir = path.dirname(state.filePath);
+  const shownIndex = state.candidates.indexOf(state.projectName);
+  return state.candidates
+    .slice(0, shownIndex + 1)
+    .map((name) => path.join(backlogDir, `${name}.md`));
+}
+
 /**
  * バックログのフォルダのファイルが変わったときに、カンバンを読み直すかを決める。
- * shownFilePath はカンバンに表示中のファイルのパスで、カンバン以外の画面 (一覧から選ぶ画面など) では undefined。
- * カンバンの表示中は表示中のファイルの変更だけで読み直し、それ以外の画面ではどのファイルの変更でも読み直す。
+ * triggerPaths は reloadTriggerPaths で求めたパスで、undefined ならどのファイルの変更でも読み直す。
  */
 export function shouldReloadOnChange(
   changedPath: string,
-  shownFilePath: string | undefined,
+  triggerPaths: readonly string[] | undefined,
 ): boolean {
-  return (
-    shownFilePath === undefined ||
-    path.resolve(changedPath) === path.resolve(shownFilePath)
-  );
+  if (triggerPaths === undefined) {
+    return true;
+  }
+  const changed = path.resolve(changedPath);
+  return triggerPaths.some((triggerPath) => path.resolve(triggerPath) === changed);
 }
 
 export interface Debouncer {

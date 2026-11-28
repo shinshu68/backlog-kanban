@@ -11,6 +11,8 @@ export type KanbanState =
       kind: "board";
       projectName: string;
       filePath: string;
+      /** 探したファイル名の候補。優先順位の高い順で、projectName を含む */
+      candidates: string[];
       backlog: ParsedBacklog;
     }
   | { kind: "noWorkspace" }
@@ -73,6 +75,7 @@ export async function loadKanbanState(
     kind: "board",
     projectName: read.name,
     filePath: read.filePath,
+    candidates,
     backlog: parseBacklog(read.text),
   };
 }

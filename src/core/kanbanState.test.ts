@@ -44,6 +44,21 @@ describe("loadKanbanState", () => {
     );
   });
 
+  it("見つかったときも、探した候補を優先順位の高い順に返す", async () => {
+    const state = await loadKanbanState({
+      folderPath: "/home/user/work/project-a",
+      backlogDir: BACKLOG_DIR,
+      getGitInfo: gitInfoOf({
+        originUrl: "git@github.com:user/missing.git",
+      }),
+    });
+
+    assert.equal(state.kind, "board");
+    if (state.kind !== "board") return;
+    assert.equal(state.projectName, "project-a");
+    assert.deepEqual(state.candidates, ["missing", "project-a"]);
+  });
+
   it("どの候補のファイルもなければ、探した場所と候補を返す", async () => {
     const state = await loadKanbanState({
       folderPath: "/home/user/work/sub",

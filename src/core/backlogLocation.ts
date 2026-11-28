@@ -88,6 +88,18 @@ export async function listBacklogProjects(
   return names.sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * name がフォルダにあるバックログのプロジェクト名 (listBacklogProjects が返す名前) のどれかなら true を返す。
+ */
+export async function isBacklogProject(
+  backlogDir: string,
+  name: string,
+): Promise<boolean> {
+  // 名前はそのままファイルのパスになるため、"../x" のような一覧にない名前で
+  // フォルダの外を読まないよう、ファイルの有無ではなく一覧と照らし合わせる
+  return (await listBacklogProjects(backlogDir)).includes(name);
+}
+
 async function isFile(filePath: string): Promise<boolean> {
   try {
     return (await stat(filePath)).isFile();
