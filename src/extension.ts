@@ -145,7 +145,6 @@ async function showKanban(project?: string): Promise<void> {
     shownProject = undefined;
     postScreen(panel, { kind: "loading" });
   }
-  triggerPaths = undefined;
   await reloadKanban(panel);
 }
 
@@ -155,6 +154,7 @@ async function showKanban(project?: string): Promise<void> {
  */
 async function reloadKanban(panel: vscode.WebviewPanel): Promise<void> {
   const loadId = ++latestLoadId;
+  triggerPaths = undefined;
   let screen: ScreenState;
   let projects: string[] = [];
   try {
