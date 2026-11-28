@@ -178,6 +178,16 @@ describe("renderKanbanContent", () => {
     assert.doesNotMatch(html, /<a href=/);
   });
 
+  it("読み込みに失敗したときは、その旨とエスケープしたエラーの内容を出す", () => {
+    const html = renderKanbanContent({
+      kind: "loadFailed",
+      message: "<git> failed",
+    });
+
+    assert.match(html, /カンバンを表示できませんでした/);
+    assert.match(html, /<pre>&lt;git&gt; failed<\/pre>/);
+  });
+
   it("開閉できるカードには、開閉を覚えるためのタスクの ID を付ける", () => {
     const todo = columnHtml(
       renderKanbanContent(boardOf(readFixture("backlog-full.md"))),
@@ -212,6 +222,17 @@ describe("renderMessage", () => {
 
   it("カンバン以外の画面では、画面の種類を key にする", () => {
     assert.equal(renderMessage({ kind: "noWorkspace" }).key, "noWorkspace");
+    assert.equal(
+      renderMessage({ kind: "loadFailed", message: "x" }).key,
+      "loadFailed",
+    );
+  });
+
+  it("読み込み中は、覚えている開閉とスクロール位置を変えないよう key を null にする", () => {
+    const message = renderMessage({ kind: "loading" });
+
+    assert.equal(message.key, null);
+    assert.match(message.html, /読み込み中/);
   });
 });
 

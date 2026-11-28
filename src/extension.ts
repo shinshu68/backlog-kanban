@@ -16,6 +16,7 @@ import {
   renderKanbanPage,
   renderMessage,
   type RenderMessage,
+  type ScreenState,
 } from "./view/renderKanban";
 
 const PANEL_VIEW_TYPE = "backlogKanban";
@@ -101,8 +102,10 @@ async function switchProject(project?: unknown): Promise<void> {
 /**
  * カンバンのタブを開き (開いていれば前に出し)、表示するバックログを読み直して描く。
  * project を渡すと、タブを閉じるまでそのプロジェクトを表示する。
+ * 新しく開いたときと project を渡したときは、読み終わるまで「読み込み中」を出す。
  */
 async function showKanban(project?: string): Promise<void> {
+  const showLoading = currentPanel === undefined || project !== undefined;
   const panel = currentPanel ?? createPanel();
   if (project !== undefined) {
     selectedProject = project;
@@ -110,23 +113,45 @@ async function showKanban(project?: string): Promise<void> {
   panel.reveal();
 
   const loadId = ++latestLoadId;
-  const state = await loadKanbanState({
-    folderPath: firstLocalFolderPath(),
-    backlogDir: backlogDirPath(),
-    getGitInfo,
-    selectedProject,
-  });
-  const projects =
-    state.kind === "noWorkspace" || state.kind === "notFound"
-      ? await listBacklogProjects(backlogDirPath())
-      : [];
+  if (showLoading) {
+    postScreen(panel, { kind: "loading" });
+  }
+  let screen: ScreenState;
+  let projects: string[] = [];
+  try {
+    const state = await loadKanbanState({
+      folderPath: firstLocalFolderPath(),
+      backlogDir: backlogDirPath(),
+      getGitInfo,
+      selectedProject,
+    });
+    if (state.kind === "noWorkspace" || state.kind === "notFound") {
+      projects = await listBacklogProjects(backlogDirPath());
+    }
+    screen = state;
+  } catch (error) {
+    screen = {
+      kind: "loadFailed",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
   if (panel !== currentPanel || loadId !== latestLoadId) {
     return;
   }
-  shownProject = state.kind === "board" ? state.projectName : undefined;
+  shownProject = screen.kind === "board" ? screen.projectName : undefined;
   panel.title =
-    state.kind === "board" ? `Backlog: ${state.projectName}` : "Backlog Kanban";
-  latestMessage = renderMessage(state, projects);
+    screen.kind === "board"
+      ? `Backlog: ${screen.projectName}`
+      : "Backlog Kanban";
+  postScreen(panel, screen, projects);
+}
+
+function postScreen(
+  panel: vscode.WebviewPanel,
+  screen: ScreenState,
+  projects: readonly string[] = [],
+): void {
+  latestMessage = renderMessage(screen, projects);
   void panel.webview.postMessage(latestMessage);
 }
 

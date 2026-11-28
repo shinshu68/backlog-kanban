@@ -25,10 +25,19 @@ export const RENDER_MESSAGE_TYPE = "render";
 /** Webview のスクリプトが動き始めたことを拡張機能に知らせるメッセージの種類 */
 export const READY_MESSAGE_TYPE = "ready";
 
+/** 画面に出す状態。バックログを読んだ結果に、読み込み中と読み込みの失敗を加えたもの */
+export type ScreenState =
+  | KanbanState
+  | { kind: "loading" }
+  | { kind: "loadFailed"; message: string };
+
 export interface RenderMessage {
   type: typeof RENDER_MESSAGE_TYPE;
-  /** 表示している画面の区別。変わったら、覚えていたカードの開閉とスクロール位置を捨てる */
-  key: string;
+  /**
+   * 表示している画面の区別。変わったら、覚えていたカードの開閉とスクロール位置を捨てる。
+   * 読み込み中のような仮の画面では null で、覚えている開閉とスクロール位置を変えない
+   */
+  key: string | null;
   html: string;
 }
 
@@ -55,14 +64,25 @@ export function renderKanbanPage(nonce: string): string {
  * 表示する状態から、Webview に送るメッセージを作る。
  */
 export function renderMessage(
-  state: KanbanState,
+  state: ScreenState,
   projects: readonly string[] = [],
 ): RenderMessage {
   return {
     type: RENDER_MESSAGE_TYPE,
-    key: state.kind === "board" ? `board:${state.projectName}` : state.kind,
+    key: screenKey(state),
     html: renderKanbanContent(state, projects),
   };
+}
+
+function screenKey(state: ScreenState): string | null {
+  switch (state.kind) {
+    case "board":
+      return `board:${state.projectName}`;
+    case "loading":
+      return null;
+    default:
+      return state.kind;
+  }
 }
 
 /**
@@ -70,7 +90,7 @@ export function renderMessage(
  * projects は、ワークスペースを開いていないときやバックログが見つからないときに、選べるように並べるプロジェクト名。
  */
 export function renderKanbanContent(
-  state: KanbanState,
+  state: ScreenState,
   projects: readonly string[] = [],
 ): string {
   switch (state.kind) {
@@ -99,6 +119,13 @@ export function renderKanbanContent(
           .map((c) => `<li><code>${escapeHtml(c)}.md</code></li>`)
           .join("")}</ul>`,
         renderProjectLinks(projects),
+      ].join("\n");
+    case "loading":
+      return `<p class="message">読み込み中…</p>`;
+    case "loadFailed":
+      return [
+        `<p class="message">カンバンを表示できませんでした。</p>`,
+        `<pre>${escapeHtml(state.message)}</pre>`,
       ].join("\n");
     case "readError":
       return [
@@ -184,7 +211,8 @@ const SCRIPT = `
   const vscode = acquireVsCodeApi();
   const root = document.getElementById("root");
   let saved = vscode.getState() || { key: undefined, openIds: [], scrollY: 0 };
-  let firstRender = true;
+  let restoreScroll = true;
+  let placeholder = false;
   const save = () => vscode.setState(saved);
 
   window.addEventListener("message", (event) => {
@@ -192,6 +220,13 @@ const SCRIPT = `
     if (!message || message.type !== ${JSON.stringify(RENDER_MESSAGE_TYPE)}) {
       return;
     }
+    if (message.key === null) {
+      placeholder = true;
+      restoreScroll = true;
+      root.innerHTML = message.html;
+      return;
+    }
+    placeholder = false;
     const sameScreen = message.key === saved.key;
     if (!sameScreen) {
       saved = { key: message.key, openIds: [], scrollY: 0 };
@@ -203,10 +238,10 @@ const SCRIPT = `
     }
     if (!sameScreen) {
       window.scrollTo(0, 0);
-    } else if (firstRender) {
+    } else if (restoreScroll) {
       window.scrollTo(0, saved.scrollY);
     }
-    firstRender = false;
+    restoreScroll = false;
     save();
   });
 
@@ -229,6 +264,9 @@ const SCRIPT = `
   window.addEventListener("scroll", () => {
     clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
+      if (placeholder) {
+        return;
+      }
       saved.scrollY = window.scrollY;
       save();
     }, 100);
