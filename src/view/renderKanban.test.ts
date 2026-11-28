@@ -4,7 +4,12 @@ import * as assert from "node:assert/strict";
 import { parseBacklog } from "../core/backlogParser";
 import type { KanbanState } from "../core/kanbanState";
 import { readFixture } from "../test/fixtures";
-import { escapeHtml, renderKanbanHtml } from "./renderKanban";
+import {
+  escapeHtml,
+  renderKanbanContent,
+  renderKanbanPage,
+  renderMessage,
+} from "./renderKanban";
 
 function boardOf(text: string): KanbanState {
   return {
@@ -24,9 +29,9 @@ function columnHtml(html: string, status: string): string {
   return match[1];
 }
 
-describe("renderKanbanHtml", () => {
+describe("renderKanbanContent", () => {
   it("左から未着手・進行中・完了の順に3列を並べ、各列にタスクの件数を出す", () => {
-    const html = renderKanbanHtml(boardOf(readFixture("backlog-full.md")));
+    const html = renderKanbanContent(boardOf(readFixture("backlog-full.md")));
 
     const order = ["todo", "inProgress", "done"].map((s) =>
       html.indexOf(`data-status="${s}"`),
@@ -39,7 +44,7 @@ describe("renderKanbanHtml", () => {
   });
 
   it("列の中のタスクは、ファイルの順に並べる", () => {
-    const html = renderKanbanHtml(boardOf(readFixture("backlog-full.md")));
+    const html = renderKanbanContent(boardOf(readFixture("backlog-full.md")));
     const todo = columnHtml(html, "todo");
 
     const positions = ["#002", "#003", "#005"].map((id) => todo.indexOf(id));
@@ -49,29 +54,29 @@ describe("renderKanbanHtml", () => {
 
   it("進行中のタスクのメモは、開閉なしで常に出す", () => {
     const inProgress = columnHtml(
-      renderKanbanHtml(boardOf(readFixture("backlog-full.md"))),
+      renderKanbanContent(boardOf(readFixture("backlog-full.md"))),
       "inProgress",
     );
 
     assert.match(inProgress, /<li>タスクDのメモ1行目<\/li>/);
-    assert.doesNotMatch(inProgress, /<details>/);
+    assert.doesNotMatch(inProgress, /<details/);
   });
 
   it("未着手・完了のタスクのメモは、開閉できる details の中に出す", () => {
-    const html = renderKanbanHtml(boardOf(readFixture("backlog-full.md")));
+    const html = renderKanbanContent(boardOf(readFixture("backlog-full.md")));
 
     assert.match(
       columnHtml(html, "todo"),
-      /<details><summary[^>]*>.*タスクB.*<\/summary><ul class="notes"><li>タスクBのメモ<\/li>/,
+      /<details[^>]*><summary[^>]*>.*タスクB.*<\/summary><ul class="notes"><li>タスクBのメモ<\/li>/,
     );
     assert.match(
       columnHtml(html, "done"),
-      /<details><summary[^>]*>.*タスクA.*<\/summary><ul class="notes"><li>タスクAのメモ<\/li>/,
+      /<details[^>]*><summary[^>]*>.*タスクA.*<\/summary><ul class="notes"><li>タスクAのメモ<\/li>/,
     );
   });
 
   it("優先度の高・中・低にはバッジを付け、未設定には付けない", () => {
-    const html = renderKanbanHtml(boardOf(readFixture("backlog-full.md")));
+    const html = renderKanbanContent(boardOf(readFixture("backlog-full.md")));
 
     assert.match(html, /<span class="priority priority-high">高<\/span>/);
     assert.match(html, /<span class="priority priority-medium">中<\/span>/);
@@ -80,14 +85,14 @@ describe("renderKanbanHtml", () => {
   });
 
   it("解釈できなかった行があれば、件数と行番号付きの内容を出す", () => {
-    const html = renderKanbanHtml(boardOf(readFixture("backlog-malformed.md")));
+    const html = renderKanbanContent(boardOf(readFixture("backlog-malformed.md")));
 
     assert.match(html, /解釈できなかった行が 6 件あります。/);
     assert.match(html, /2行目<\/span> <code>- \[ \] \*\*#009\*\*/);
   });
 
   it("解釈できなかった行がなければ、その欄を出さない", () => {
-    const html = renderKanbanHtml(boardOf(readFixture("backlog-full.md")));
+    const html = renderKanbanContent(boardOf(readFixture("backlog-full.md")));
 
     assert.doesNotMatch(html, /解釈できなかった行/);
   });
@@ -99,7 +104,7 @@ describe("renderKanbanHtml", () => {
       "      > a & b",
     ].join("\n");
 
-    const html = renderKanbanHtml(boardOf(text));
+    const html = renderKanbanContent(boardOf(text));
 
     assert.doesNotMatch(html, /<script>/);
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
@@ -107,7 +112,7 @@ describe("renderKanbanHtml", () => {
   });
 
   it("バックログが見つからないときは、探した場所とファイル名の候補を出す", () => {
-    const html = renderKanbanHtml({
+    const html = renderKanbanContent({
       kind: "notFound",
       backlogDir: "/home/user/.claude/backlog-data",
       candidates: ["repo", "dir"],
@@ -120,13 +125,13 @@ describe("renderKanbanHtml", () => {
 
   it("ワークスペースを開いていないときは、その旨を出す", () => {
     assert.match(
-      renderKanbanHtml({ kind: "noWorkspace" }),
+      renderKanbanContent({ kind: "noWorkspace" }),
       /ワークスペースを開いていません/,
     );
   });
 
   it("ワークスペースを開いていないときは、プロジェクトを切り替えるコマンドのリンクを名前ごとに並べる", () => {
-    const html = renderKanbanHtml({ kind: "noWorkspace" }, [
+    const html = renderKanbanContent({ kind: "noWorkspace" }, [
       "project-a",
       "project-b",
     ]);
@@ -147,7 +152,7 @@ describe("renderKanbanHtml", () => {
   });
 
   it("バックログが見つからないときも、探した場所と並べてプロジェクトのリンクを出す", () => {
-    const html = renderKanbanHtml(
+    const html = renderKanbanContent(
       {
         kind: "notFound",
         backlogDir: "/home/user/.claude/backlog-data",
@@ -161,22 +166,52 @@ describe("renderKanbanHtml", () => {
   });
 
   it("プロジェクト名の HTML の特殊文字は、リンクの先と表示の両方でエスケープする", () => {
-    const html = renderKanbanHtml({ kind: "noWorkspace" }, [`a'<b>`]);
+    const html = renderKanbanContent({ kind: "noWorkspace" }, [`a'<b>`]);
 
     assert.match(html, /<a href="[^"<>]*&#39;[^"<>]*">a&#39;&lt;b&gt;<\/a>/);
   });
 
   it("選べるプロジェクトがなければ、リンクの代わりにその旨を出す", () => {
-    const html = renderKanbanHtml({ kind: "noWorkspace" }, []);
+    const html = renderKanbanContent({ kind: "noWorkspace" }, []);
 
     assert.match(html, /選べるバックログがありません/);
     assert.doesNotMatch(html, /<a href=/);
   });
 
-  it("スクリプトを許さない Content-Security-Policy を付ける", () => {
-    const html = renderKanbanHtml({ kind: "noWorkspace" });
+  it("開閉できるカードには、開閉を覚えるためのタスクの ID を付ける", () => {
+    const todo = columnHtml(
+      renderKanbanContent(boardOf(readFixture("backlog-full.md"))),
+      "todo",
+    );
 
-    assert.match(html, /default-src 'none'; style-src 'unsafe-inline';/);
+    assert.match(todo, /<details data-task-id="#002">/);
+  });
+});
+
+describe("renderKanbanPage", () => {
+  it("渡した nonce のスクリプトだけを許す Content-Security-Policy を付ける", () => {
+    const html = renderKanbanPage("abc123");
+
+    assert.match(
+      html,
+      /default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-abc123';/,
+    );
+    assert.match(html, /<script nonce="abc123">/);
+    assert.equal(html.match(/<script/g)?.length, 1);
+  });
+});
+
+describe("renderMessage", () => {
+  it("中身の HTML と、表示中のプロジェクトで区別する画面の key を持つ", () => {
+    const message = renderMessage(boardOf(readFixture("backlog-full.md")));
+
+    assert.equal(message.type, "render");
+    assert.equal(message.key, "board:project-a");
+    assert.match(message.html, /data-status="todo"/);
+  });
+
+  it("カンバン以外の画面では、画面の種類を key にする", () => {
+    assert.equal(renderMessage({ kind: "noWorkspace" }).key, "noWorkspace");
   });
 });
 

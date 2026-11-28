@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as os from "node:os";
 import * as vscode from "vscode";
 
@@ -10,7 +11,12 @@ import { loadKanbanState, locateBacklog } from "./core/kanbanState";
 import { readGitInfo } from "./core/projectName";
 import { projectPickItems } from "./core/projectPicker";
 import { createTtlCache } from "./core/ttlCache";
-import { renderKanbanHtml } from "./view/renderKanban";
+import {
+  READY_MESSAGE_TYPE,
+  renderKanbanPage,
+  renderMessage,
+  type RenderMessage,
+} from "./view/renderKanban";
 
 const PANEL_VIEW_TYPE = "backlogKanban";
 const GIT_INFO_TTL_MS = 60_000;
@@ -22,6 +28,8 @@ let currentPanel: vscode.WebviewPanel | undefined;
 let selectedProject: string | undefined;
 /** カンバンに表示中のプロジェクト名。バックログを表示していなければ undefined */
 let shownProject: string | undefined;
+/** 最後に Webview へ送った中身。Webview が作り直されたときに送り直す */
+let latestMessage: RenderMessage | undefined;
 /** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
 let latestLoadId = 0;
 
@@ -118,7 +126,8 @@ async function showKanban(project?: string): Promise<void> {
   shownProject = state.kind === "board" ? state.projectName : undefined;
   panel.title =
     state.kind === "board" ? `Backlog: ${state.projectName}` : "Backlog Kanban";
-  panel.webview.html = renderKanbanHtml(state, projects);
+  latestMessage = renderMessage(state, projects);
+  void panel.webview.postMessage(latestMessage);
 }
 
 function createPanel(): vscode.WebviewPanel {
@@ -126,12 +135,29 @@ function createPanel(): vscode.WebviewPanel {
     PANEL_VIEW_TYPE,
     "Backlog Kanban",
     vscode.ViewColumn.Active,
-    { enableCommandUris: [SWITCH_COMMAND_ID] },
+    {
+      enableScripts: true,
+      enableCommandUris: [SWITCH_COMMAND_ID],
+      localResourceRoots: [],
+    },
   );
+  panel.webview.html = renderKanbanPage(randomBytes(16).toString("base64"));
+  // 隠れていたタブが再び表示されると Webview は作り直されて中身が空になるため、
+  // スクリプトが動き始めた知らせを受けて最新の中身を送り直す
+  panel.webview.onDidReceiveMessage((message: unknown) => {
+    if (
+      (message as { type?: unknown } | undefined)?.type ===
+        READY_MESSAGE_TYPE &&
+      latestMessage
+    ) {
+      void panel.webview.postMessage(latestMessage);
+    }
+  });
   panel.onDidDispose(() => {
     currentPanel = undefined;
     selectedProject = undefined;
     shownProject = undefined;
+    latestMessage = undefined;
   });
   currentPanel = panel;
   return panel;

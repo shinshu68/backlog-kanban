@@ -20,30 +20,58 @@ const PRIORITY_CLASS: Readonly<Record<Priority, string | undefined>> = {
   未設定: undefined,
 };
 
+/** 拡張機能から Webview へ、表示する中身を送るメッセージの種類 */
+export const RENDER_MESSAGE_TYPE = "render";
+/** Webview のスクリプトが動き始めたことを拡張機能に知らせるメッセージの種類 */
+export const READY_MESSAGE_TYPE = "ready";
+
+export interface RenderMessage {
+  type: typeof RENDER_MESSAGE_TYPE;
+  /** 表示している画面の区別。変わったら、覚えていたカードの開閉とスクロール位置を捨てる */
+  key: string;
+  html: string;
+}
+
 /**
- * 表示する状態から、Webview に渡す HTML の文書全体を作る。
- * projects は、ワークスペースを開いていないときやバックログが見つからないときに、選べるように並べるプロジェクト名。
+ * Webview に1回だけ設定するページを作る。中身は空で、renderMessage で作ったメッセージを受けて描く。
+ * nonce は、ページの中のスクリプトだけを動かせるようにするための、表示ごとに作る乱数。
  */
-export function renderKanbanHtml(
-  state: KanbanState,
-  projects: readonly string[] = [],
-): string {
+export function renderKanbanPage(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <style>${STYLE}</style>
 </head>
 <body>
-${renderBody(state, projects)}
+<div id="root"></div>
+<script nonce="${nonce}">${SCRIPT}</script>
 </body>
 </html>`;
 }
 
-function renderBody(
+/**
+ * 表示する状態から、Webview に送るメッセージを作る。
+ */
+export function renderMessage(
   state: KanbanState,
-  projects: readonly string[],
+  projects: readonly string[] = [],
+): RenderMessage {
+  return {
+    type: RENDER_MESSAGE_TYPE,
+    key: state.kind === "board" ? `board:${state.projectName}` : state.kind,
+    html: renderKanbanContent(state, projects),
+  };
+}
+
+/**
+ * 表示する状態から、ページの中に差し込む HTML を作る。
+ * projects は、ワークスペースを開いていないときやバックログが見つからないときに、選べるように並べるプロジェクト名。
+ */
+export function renderKanbanContent(
+  state: KanbanState,
+  projects: readonly string[] = [],
 ): string {
   switch (state.kind) {
     case "board":
@@ -130,7 +158,7 @@ function renderCard(task: Task, status: Status): string {
   if (status === "inProgress") {
     return `<article class="card"><div class="heading">${heading}</div>${notes}</article>`;
   }
-  return `<article class="card"><details><summary class="heading">${heading}</summary>${notes}</details></article>`;
+  return `<article class="card"><details data-task-id="${escapeHtml(task.id)}"><summary class="heading">${heading}</summary>${notes}</details></article>`;
 }
 
 function renderPriority(priority: Priority): string {
@@ -148,6 +176,67 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// 中身を丸ごと差し替えると開いた details が閉じるため、タスクの ID で開閉を覚えて開き直す。
+// タブが隠れると Webview は作り直されるため、開閉とスクロール位置は setState にも残す
+const SCRIPT = `
+(() => {
+  const vscode = acquireVsCodeApi();
+  const root = document.getElementById("root");
+  let saved = vscode.getState() || { key: undefined, openIds: [], scrollY: 0 };
+  let firstRender = true;
+  const save = () => vscode.setState(saved);
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (!message || message.type !== ${JSON.stringify(RENDER_MESSAGE_TYPE)}) {
+      return;
+    }
+    const sameScreen = message.key === saved.key;
+    if (!sameScreen) {
+      saved = { key: message.key, openIds: [], scrollY: 0 };
+    }
+    root.innerHTML = message.html;
+    const openIds = new Set(saved.openIds);
+    for (const details of root.querySelectorAll("details[data-task-id]")) {
+      details.open = openIds.has(details.dataset.taskId);
+    }
+    if (!sameScreen) {
+      window.scrollTo(0, 0);
+    } else if (firstRender) {
+      window.scrollTo(0, saved.scrollY);
+    }
+    firstRender = false;
+    save();
+  });
+
+  root.addEventListener("toggle", (event) => {
+    const details = event.target;
+    if (!(details instanceof HTMLDetailsElement) || !details.dataset.taskId) {
+      return;
+    }
+    const openIds = new Set(saved.openIds);
+    if (details.open) {
+      openIds.add(details.dataset.taskId);
+    } else {
+      openIds.delete(details.dataset.taskId);
+    }
+    saved.openIds = [...openIds];
+    save();
+  }, true);
+
+  let scrollTimer;
+  window.addEventListener("scroll", () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      saved.scrollY = window.scrollY;
+      save();
+    }, 100);
+  });
+
+  vscode.postMessage({ type: ${JSON.stringify(READY_MESSAGE_TYPE)} });
+})();
+`;
 
 const STYLE = `
 body {
