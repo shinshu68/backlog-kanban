@@ -41,7 +41,7 @@ describe("resolveBacklogDir", () => {
   it("設定でパスを指定していれば、ホームの下のパスより設定の値を使う", async () => {
     const resolution = await resolveBacklogDir({
       settingDir: BACKLOG_DIR,
-      platform: "linux",
+      platform: process.platform,
       homeDir: "/home/no-such-user",
       resolveWslDir: failingWslDir(),
     });
@@ -65,7 +65,7 @@ describe("resolveBacklogDir", () => {
     const missing = path.join(BACKLOG_DIR, "no-such-dir");
     const resolution = await resolveBacklogDir({
       settingDir: missing,
-      platform: "linux",
+      platform: process.platform,
       homeDir: "/home/user",
       resolveWslDir: failingWslDir(),
     });
@@ -80,7 +80,7 @@ describe("resolveBacklogDir", () => {
   it("設定のパスがファイルなら、使えないことを返す", async () => {
     const resolution = await resolveBacklogDir({
       settingDir: path.join(BACKLOG_DIR, "project-a.md"),
-      platform: "linux",
+      platform: process.platform,
       homeDir: "/home/user",
       resolveWslDir: failingWslDir(),
     });
