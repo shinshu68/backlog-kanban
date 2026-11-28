@@ -18,6 +18,7 @@ backlog スキルが管理するバックログ (`~/.claude/backlog-data/<プロ
 
 - `src/extension.ts`: エントリーポイント。コマンドの登録
 - `src/commandIds.ts`: コマンドの ID。`extension.ts` と `src/view/` の両方から使う
+- `src/configKeys.ts`: 設定のセクションとキー。`extension.ts` と `src/view/` の両方から使う
 - `src/core/`: VSCode の API に依存しない処理 (パーサー、プロジェクト名の解決、データの置き場所の解決)。`vscode` を import しない
 - `src/view/`: Webview の表示
 - テストは対象と同じフォルダに `*.test.ts` で置く。フィクスチャは `src/test/fixtures/` に置く
@@ -51,6 +52,7 @@ backlog スキルが管理するバックログ (`~/.claude/backlog-data/<プロ
   - コマンドの ID (`backlogKanban.open`): `package.json` の `contributes.commands` と `src/commandIds.ts` の `OPEN_COMMAND_ID` (コマンドの登録とステータスバーの入口の両方で使う)。片方だけ変えると、エラーが出ずにコマンドが動かなくなる
   - 切り替えのコマンドの ID (`backlogKanban.switchProject`): `package.json` の `contributes.commands` と `contributes.menus.editor/title`、`src/commandIds.ts` の `SWITCH_COMMAND_ID` (コマンドの登録、一覧から選ぶ画面のリンク、Webview の `enableCommandUris` で使う)。片方だけ変えると、エラーが出ずに切り替えのボタンやリンクが動かなくなる
   - カンバンのパネルの種類 (`backlogKanban`): `src/extension.ts` の `PANEL_VIEW_TYPE` と、`package.json` の `contributes.menus.editor/title` の `when` (`activeWebviewPanelId`)。片方だけ変えると、タイトルバーの切り替えのボタンがエラーなしに出なくなる
+  - 設定のキー (`backlogKanban.backlogDir`): `package.json` の `contributes.configuration.properties` と `src/configKeys.ts` の `CONFIG_SECTION`・`BACKLOG_DIR_CONFIG_KEY` (設定を読む処理と、置き場所が見つからない画面の案内で使う)。片方だけ変えると、エラーが出ずに設定が効かなくなる
   - VSCode の版: `package.json` の `engines.vscode` と `devDependencies` の `@types/vscode`。型の版を engines より新しくすると .vsix を作れない
 - プロジェクト名からバックログのファイルを探す順序 (origin のリポジトリ名 → git のトップディレクトリ名 → ディレクトリ名) は、この拡張機能の `src/core/projectName.ts` と、pj-status の `scripts/collect.sh` の `name_candidates` とでそろえる。origin の URL からリポジトリ名を取り出す方法 (末尾の `.git` を除き、最後の `/` と `:` より後ろを取る) も同じにする
 - テスト用のバックログのフィクスチャには、実際のバックログのタスク名を使わない。「タスクA」のような架空のタイトルにする

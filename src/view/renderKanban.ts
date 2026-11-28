@@ -1,4 +1,5 @@
 import { SWITCH_COMMAND_ID } from "../commandIds";
+import { BACKLOG_DIR_SETTING } from "../configKeys";
 import type {
   Priority,
   Status,
@@ -25,11 +26,19 @@ export const RENDER_MESSAGE_TYPE = "render";
 /** Webview のスクリプトが動き始めたことを拡張機能に知らせるメッセージの種類 */
 export const READY_MESSAGE_TYPE = "ready";
 
-/** 画面に出す状態。バックログを読んだ結果に、読み込み中と読み込みの失敗を加えたもの */
+/**
+ * 画面に出す状態。バックログを読んだ結果に、読み込み中・読み込みの失敗・backlog-data のフォルダが使えないことを加えたもの
+ */
 export type ScreenState =
   | KanbanState
   | { kind: "loading" }
-  | { kind: "loadFailed"; message: string };
+  | { kind: "loadFailed"; message: string }
+  | {
+      kind: "backlogDirUnavailable";
+      /** 使おうとしたフォルダのパス。パスを求める前に失敗したときは undefined */
+      dir?: string;
+      message: string;
+    };
 
 export interface RenderMessage {
   type: typeof RENDER_MESSAGE_TYPE;
@@ -122,6 +131,17 @@ export function renderKanbanContent(
       ].join("\n");
     case "loading":
       return `<p class="message">読み込み中…</p>`;
+    case "backlogDirUnavailable":
+      return [
+        `<p class="message">バックログの置き場所 (backlog-data のフォルダ) が見つかりません。</p>`,
+        state.dir === undefined
+          ? ""
+          : `<p>探した場所: <code>${escapeHtml(state.dir)}</code></p>`,
+        `<pre>${escapeHtml(state.message)}</pre>`,
+        `<p>設定 <code>${BACKLOG_DIR_SETTING}</code> で、フォルダのパスを指定できます。</p>`,
+      ]
+        .filter((line) => line !== "")
+        .join("\n");
     case "loadFailed":
       return [
         `<p class="message">カンバンを表示できませんでした。</p>`,

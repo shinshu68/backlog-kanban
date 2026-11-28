@@ -189,6 +189,29 @@ describe("renderKanbanContent", () => {
     assert.match(html, /<pre>&lt;git&gt; failed<\/pre>/);
   });
 
+  it("置き場所が使えないときは、探した場所・理由・指定できる設定の名前を出す", () => {
+    const html = renderKanbanContent({
+      kind: "backlogDirUnavailable",
+      dir: "D:\\data\\<backlog>",
+      message: "フォルダがありません。",
+    });
+
+    assert.match(html, /見つかりません/);
+    assert.match(html, /D:\\data\\&lt;backlog&gt;/);
+    assert.match(html, /フォルダがありません。/);
+    assert.match(html, /backlogKanban\.backlogDir/);
+  });
+
+  it("置き場所のパスを求める前に失敗したときは、探した場所を出さない", () => {
+    const html = renderKanbanContent({
+      kind: "backlogDirUnavailable",
+      message: "wsl.exe を起動できませんでした",
+    });
+
+    assert.doesNotMatch(html, /探した場所/);
+    assert.match(html, /wsl\.exe を起動できませんでした/);
+  });
+
   it("開閉できるカードには、開閉を覚えるためのタスクの ID を付ける", () => {
     const todo = columnHtml(
       renderKanbanContent(boardOf(readFixture("backlog-full.md"))),
