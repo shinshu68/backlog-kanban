@@ -68,6 +68,22 @@ describe("shouldReloadOnChange", () => {
     );
   });
 
+  it("ドライブ文字の大文字・小文字だけが違うパスは、同じファイルとして扱う", () => {
+    assert.equal(
+      shouldReloadOnChange("c:\\Users\\user\\backlog\\a.md", [
+        "C:\\Users\\user\\backlog\\a.md",
+      ]),
+      true,
+    );
+  });
+
+  it("ドライブ文字より後ろの大文字・小文字が違うパスは、別のファイルとして扱う", () => {
+    assert.equal(
+      shouldReloadOnChange(path.join(DIR, "Folder-X.md"), [path.join(DIR, "folder-x.md")]),
+      false,
+    );
+  });
+
   it("きっかけが undefined なら、どのファイルが変わっても読み直す", () => {
     assert.equal(
       shouldReloadOnChange(path.join(DIR, "project-b.md"), undefined),

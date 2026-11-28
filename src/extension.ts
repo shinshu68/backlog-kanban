@@ -4,7 +4,17 @@ import * as vscode from "vscode";
 
 import { OPEN_COMMAND_ID, SWITCH_COMMAND_ID } from "./commandIds";
 import {
-  defaultBacklogDir,
+  BACKLOG_DIR_CONFIG_KEY,
+  BACKLOG_DIR_SETTING,
+  CONFIG_SECTION,
+} from "./configKeys";
+import {
+  createResolveCache,
+  resolveBacklogDir,
+  resolveWslBacklogDir,
+  type BacklogDirResolution,
+} from "./core/backlogDir";
+import {
   isBacklogProject,
   listBacklogProjects,
 } from "./core/backlogLocation";
@@ -30,6 +40,7 @@ const GIT_INFO_TTL_MS = 60_000;
 const RELOAD_DELAY_MS = 200;
 
 const getGitInfo = createTtlCache(readGitInfo, GIT_INFO_TTL_MS);
+const getWslBacklogDir = createResolveCache(() => resolveWslBacklogDir());
 
 let currentPanel: vscode.WebviewPanel | undefined;
 /** 一覧から選んだプロジェクト名。カンバンのタブを閉じるまで保つ */
@@ -43,6 +54,10 @@ let shownProject: string | undefined;
 let triggerPaths: string[] | undefined;
 /** 最後に Webview へ送った中身。Webview が作り直されたときに送り直す */
 let latestMessage: RenderMessage | undefined;
+/** backlog-data のフォルダの監視。監視しているフォルダのパスと組にして、フォルダが変わったら張り直す */
+let backlogWatcher: { dir: string; disposable: vscode.Disposable } | undefined;
+/** 開いているカンバンのタブの読み直しを予約する。タブがなければ undefined */
+let scheduleReload: (() => void) | undefined;
 /** 最後に始めた読み込みの番号。古い読み込みの結果で描き直さないために使う */
 let latestLoadId = 0;
 /**
@@ -88,7 +103,16 @@ async function openKanbanPanel(): Promise<void> {
  */
 async function switchProject(project?: unknown): Promise<void> {
   const requestId = ++latestShowRequestId;
-  const backlogDir = backlogDirPath();
+  const location = await currentBacklogDir();
+  if (location.kind === "unavailable") {
+    if (requestId === latestShowRequestId) {
+      void vscode.window.showWarningMessage(
+        `バックログの置き場所が見つかりません: ${location.message}`,
+      );
+    }
+    return;
+  }
+  const backlogDir = location.dir;
   if (typeof project === "string") {
     const isListed = await isBacklogProject(backlogDir, project);
     if (requestId !== latestShowRequestId) {
@@ -157,17 +181,28 @@ async function reloadKanban(panel: vscode.WebviewPanel): Promise<void> {
   triggerPaths = undefined;
   let screen: ScreenState;
   let projects: string[] = [];
+  let watchDir: string | undefined;
   try {
-    const state = await loadKanbanState({
-      folderPath: firstLocalFolderPath(),
-      backlogDir: backlogDirPath(),
-      getGitInfo,
-      selectedProject,
-    });
-    if (state.kind === "noWorkspace" || state.kind === "notFound") {
-      projects = await listBacklogProjects(backlogDirPath());
+    const location = await currentBacklogDir();
+    if (location.kind === "unavailable") {
+      screen = {
+        kind: "backlogDirUnavailable",
+        dir: location.dir,
+        message: location.message,
+      };
+    } else {
+      watchDir = location.dir;
+      const state = await loadKanbanState({
+        folderPath: firstLocalFolderPath(),
+        backlogDir: location.dir,
+        getGitInfo,
+        selectedProject,
+      });
+      if (state.kind === "noWorkspace" || state.kind === "notFound") {
+        projects = await listBacklogProjects(location.dir);
+      }
+      screen = state;
     }
-    screen = state;
   } catch (error) {
     screen = {
       kind: "loadFailed",
@@ -177,6 +212,7 @@ async function reloadKanban(panel: vscode.WebviewPanel): Promise<void> {
   if (panel !== currentPanel || loadId !== latestLoadId) {
     return;
   }
+  watchBacklogDir(watchDir);
   shownProject = screen.kind === "board" ? screen.projectName : undefined;
   triggerPaths =
     screen.kind === "board" ? reloadTriggerPaths(screen) : undefined;
@@ -223,8 +259,9 @@ function createPanel(): vscode.WebviewPanel {
     () => void reloadKanban(panel),
     RELOAD_DELAY_MS,
   );
-  const watcher = watchBacklogDir((changedPath) => {
-    if (shouldReloadOnChange(changedPath, triggerPaths)) {
+  scheduleReload = () => reload.schedule();
+  const configListener = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration(BACKLOG_DIR_SETTING)) {
       reload.schedule();
     }
   });
@@ -235,7 +272,9 @@ function createPanel(): vscode.WebviewPanel {
   });
   panel.onDidDispose(() => {
     reload.cancel();
-    watcher.dispose();
+    scheduleReload = undefined;
+    watchBacklogDir(undefined);
+    configListener.dispose();
     folderListener.dispose();
     currentPanel = undefined;
     selectedProject = undefined;
@@ -248,25 +287,51 @@ function createPanel(): vscode.WebviewPanel {
 }
 
 /**
- * バックログのフォルダ直下の .md のファイルの変更・作成・削除を監視し、変わったファイルのパスを渡す。
+ * バックログのフォルダ直下の .md のファイルの変更・作成・削除を監視し、描き直すきっかけのファイルが変わったら読み直す。
+ * dir が今の監視と違えば張り直し、undefined なら監視をやめる。
  */
-function watchBacklogDir(
-  onChange: (changedPath: string) => void,
-): vscode.Disposable {
+function watchBacklogDir(dir: string | undefined): void {
+  if (backlogWatcher?.dir === dir) {
+    return;
+  }
+  backlogWatcher?.disposable.dispose();
+  backlogWatcher = undefined;
+  if (dir === undefined) {
+    return;
+  }
   const watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(vscode.Uri.file(backlogDirPath()), "*.md"),
+    new vscode.RelativePattern(vscode.Uri.file(dir), "*.md"),
   );
-  const listener = (uri: vscode.Uri) => onChange(uri.fsPath);
-  return vscode.Disposable.from(
-    watcher,
-    watcher.onDidChange(listener),
-    watcher.onDidCreate(listener),
-    watcher.onDidDelete(listener),
-  );
+  const listener = (uri: vscode.Uri) => {
+    if (shouldReloadOnChange(uri.fsPath, triggerPaths)) {
+      scheduleReload?.();
+    }
+  };
+  backlogWatcher = {
+    dir,
+    disposable: vscode.Disposable.from(
+      watcher,
+      watcher.onDidChange(listener),
+      watcher.onDidCreate(listener),
+      watcher.onDidDelete(listener),
+    ),
+  };
 }
 
-function backlogDirPath(): string {
-  return defaultBacklogDir(os.homedir());
+/**
+ * backlog-data のフォルダを決める。設定で指定していればその値を、なければ実行環境に応じたパスを使う。
+ */
+function currentBacklogDir(): Promise<BacklogDirResolution> {
+  const settingDir = vscode.workspace
+    .getConfiguration(CONFIG_SECTION)
+    .get<string>(BACKLOG_DIR_CONFIG_KEY, "")
+    .trim();
+  return resolveBacklogDir({
+    settingDir: settingDir === "" ? undefined : settingDir,
+    platform: process.platform,
+    homeDir: os.homedir(),
+    resolveWslDir: getWslBacklogDir,
+  });
 }
 
 function firstLocalFolderPath(): string | undefined {

@@ -33,6 +33,17 @@
         "icon": "$(list-selection)"
       }
     ],
+    "configuration": {
+      "title": "Backlog Kanban",
+      "properties": {
+        "backlogKanban.backlogDir": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "backlog スキルのバックログを置くフォルダ (`backlog-data`) の絶対パス。空のときは、WSL に接続したウィンドウでは `~/.claude/backlog-data`、Windows ローカルのウィンドウでは `wsl.exe` で求めた WSL 側の `~/.claude/backlog-data` を使う。"
+        }
+      }
+    },
     "menus": {
       "editor/title": [
         {
